@@ -1,0 +1,273 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url("https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Syne:wght@700;800;900&family=JetBrains+Mono:wght@400;500;700&display=swap");
+
+:root {
+    --bg-dark: #0b0c10;
+    --bg-surface: #12141c;
+    --bg-elevated: #1a1d27;
+    --border-soft: rgba(255, 255, 255, 0.08);
+    --border-glow: rgba(249, 115, 22, 0.35);
+    --amber: #f97316;
+    --crimson: #ef4444;
+    --violet: #a855f7;
+    --slate: #94a3b8;
+    --pure: #ffffff;
+
+    --background: 240 10% 5%;
+    --foreground: 0 0% 98%;
+    --card: 232 15% 10%;
+    --card-foreground: 0 0% 98%;
+    --popover: 232 15% 10%;
+    --popover-foreground: 0 0% 98%;
+    --primary: 24 95% 53%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 232 15% 18%;
+    --secondary-foreground: 0 0% 98%;
+    --muted: 232 15% 15%;
+    --muted-foreground: 215 20% 65%;
+    --accent: 271 91% 65%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 232 15% 20%;
+    --input: 232 15% 20%;
+    --ring: 24 95% 53%;
+    --radius: 0.75rem;
+}
+
+* {
+    @apply border-border;
+}
+
+html,
+body {
+    background: var(--bg-dark);
+    color: var(--pure);
+    font-family: "Plus Jakarta Sans", sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+.font-display {
+    font-family: "Syne", sans-serif;
+    letter-spacing: -0.02em;
+}
+.font-mono {
+    font-family: "JetBrains Mono", monospace;
+}
+
+/* Grain overlay */
+.grain::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 100;
+    opacity: 0.06;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+.bg-mesh {
+    background:
+        radial-gradient(
+            circle at 15% 10%,
+            rgba(249, 115, 22, 0.14),
+            transparent 45%
+        ),
+        radial-gradient(
+            circle at 85% 20%,
+            rgba(168, 85, 247, 0.14),
+            transparent 45%
+        ),
+        radial-gradient(
+            circle at 50% 90%,
+            rgba(239, 68, 68, 0.1),
+            transparent 55%
+        ),
+        var(--bg-dark);
+}
+
+.gradient-text {
+    background: linear-gradient(
+        135deg,
+        #f97316 0%,
+        #ef4444 45%,
+        #a855f7 100%
+    );
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+.gradient-border {
+    position: relative;
+    background: var(--bg-surface);
+    border-radius: 16px;
+}
+.gradient-border::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: 16px;
+    padding: 1px;
+    background: linear-gradient(135deg, #f97316, #ef4444, #a855f7);
+    -webkit-mask:
+        linear-gradient(#000 0 0) content-box,
+        linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    pointer-events: none;
+}
+
+.glass {
+    background: rgba(18, 20, 28, 0.72);
+    backdrop-filter: blur(18px);
+    -webkit-backdrop-filter: blur(18px);
+    border: 1px solid var(--border-soft);
+}
+
+.btn-primary {
+    background: linear-gradient(135deg, #f97316 0%, #ef4444 100%);
+    color: white;
+    padding: 0.75rem 1.5rem;
+    border-radius: 999px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    transition:
+        transform 0.2s ease,
+        box-shadow 0.2s ease,
+        opacity 0.2s ease;
+    box-shadow: 0 8px 32px rgba(249, 115, 22, 0.25);
+}
+.btn-primary:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 12px 40px rgba(249, 115, 22, 0.4);
+}
+.btn-primary:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+    transform: none;
+}
+
+.btn-ghost {
+    background: transparent;
+    color: var(--pure);
+    padding: 0.75rem 1.5rem;
+    border-radius: 999px;
+    font-weight: 500;
+    border: 1px solid var(--border-soft);
+    transition: all 0.2s ease;
+}
+.btn-ghost:hover {
+    background: rgba(255, 255, 255, 0.04);
+    border-color: rgba(249, 115, 22, 0.4);
+}
+
+.card {
+    background: var(--bg-surface);
+    border: 1px solid var(--border-soft);
+    border-radius: 16px;
+    transition:
+        border-color 0.25s ease,
+        transform 0.25s ease;
+}
+.card:hover {
+    border-color: rgba(249, 115, 22, 0.3);
+}
+
+.input-field {
+    width: 100%;
+    background: rgba(11, 12, 16, 0.7);
+    border: 1px solid var(--border-soft);
+    padding: 0.75rem 1rem;
+    border-radius: 12px;
+    color: var(--pure);
+    font-size: 15px;
+    transition: border-color 0.2s ease;
+}
+.input-field:focus {
+    outline: none;
+    border-color: var(--amber);
+}
+.input-field::placeholder {
+    color: var(--slate);
+}
+
+.divider-glow {
+    height: 1px;
+    background: linear-gradient(
+        90deg,
+        transparent,
+        rgba(249, 115, 22, 0.4),
+        transparent
+    );
+}
+
+@keyframes wave {
+    0%,
+    100% {
+        transform: scaleY(0.4);
+    }
+    50% {
+        transform: scaleY(1);
+    }
+}
+.wave-bar {
+    display: inline-block;
+    width: 3px;
+    height: 18px;
+    margin: 0 1.5px;
+    background: currentColor;
+    border-radius: 2px;
+    animation: wave 1s ease-in-out infinite;
+}
+.wave-bar:nth-child(2) {
+    animation-delay: 0.15s;
+}
+.wave-bar:nth-child(3) {
+    animation-delay: 0.3s;
+}
+.wave-bar:nth-child(4) {
+    animation-delay: 0.45s;
+}
+.wave-bar:nth-child(5) {
+    animation-delay: 0.6s;
+}
+
+.reveal {
+    animation: reveal-up 0.6s ease both;
+}
+@keyframes reveal-up {
+    from {
+        opacity: 0;
+        transform: translateY(24px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+::selection {
+    background: rgba(249, 115, 22, 0.35);
+    color: white;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+}
+::-webkit-scrollbar-track {
+    background: #0b0c10;
+}
+::-webkit-scrollbar-thumb {
+    background: #1a1d27;
+    border-radius: 6px;
+}
+::-webkit-scrollbar-thumb:hover {
+    background: #2a2d3a;
+}

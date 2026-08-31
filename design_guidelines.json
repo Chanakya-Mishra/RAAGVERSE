@@ -1,0 +1,200 @@
+{
+  "theme": "dark_immersive_electric",
+  "archetype": "THE PERFORMANCE PRO & ELECTRIC NEON HYBRID (Campus Music Club & Acoustic Energy)",
+  "emotional_tone": "Electric, acoustic warmth, energetic, rebellious, empowering, high-octane community vibe",
+  "fonts": {
+    "google_fonts_import": "https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Syne:wght@700;800;900&family=JetBrains+Mono:wght@400;500;700&display=swap",
+    "heading": "Syne, sans-serif",
+    "subheading": "Plus Jakarta Sans, sans-serif",
+    "body": "Plus Jakarta Sans, sans-serif",
+    "mono": "JetBrains Mono, monospace"
+  },
+  "colors": {
+    "background": {
+      "dark": "#0B0C10",
+      "surface": "#12141C",
+      "surface_elevated": "#1A1D27",
+      "border": "rgba(255, 255, 255, 0.08)",
+      "border_glow": "rgba(249, 115, 22, 0.3)"
+    },
+    "brand": {
+      "electric_amber": "#F97316",
+      "crimson_flame": "#EF4444",
+      "neon_violet": "#A855F7",
+      "pure_white": "#FFFFFF",
+      "muted_slate": "#94A3B8",
+      "dark_charcoal": "#0F1117"
+    },
+    "gradients": {
+      "accent_gradient": "linear-gradient(135deg, #F97316 0%, #EF4444 50%, #A855F7 100%)",
+      "surface_glow": "radial-gradient(circle at 50% 0%, rgba(249, 115, 22, 0.15), transparent 70%)"
+    }
+  },
+  "image_urls": {
+    "hero_banner": {
+      "url": "https://images.unsplash.com/photo-1565035010268-a3816f98589a?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2OTV8MHwxfHNlYXJjaHwxfHxsaXZlJTIwbXVzaWMlMjBjb25jZXJ0JTIwYmFuZCUyMGphbSUyMHNlc3Npb24lMjBzdGFnZXxlbnwwfHx8fDE3ODgxNjg0OTF8MA&ixlib=rb-4.1.0&q=85",
+      "description": "Crowd cheering and live band performing on stage under warm golden spotlights",
+      "category": "hero_background"
+    },
+    "acoustic_jam_room": {
+      "url": "https://images.unsplash.com/photo-1598488035139-bdbb2231ce04?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDk1NzZ8MHwxfHNlYXJjaHwxfHxndWl0YXIlMjBhY291c3RpYyUyMG11c2ljJTIwamFtJTIwc3R1ZGlvfGVufDB8fHx8MTc4ODE2ODQ5Nnww&ixlib=rb-4.1.0&q=85",
+      "description": "Music recording studio with acoustic guitars on the wall and mixer console",
+      "category": "feature_jams_and_jamroom"
+    },
+    "band_live_performance": {
+      "url": "https://images.unsplash.com/photo-1499364615650-ec38552f4f34?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2OTV8MHwxfHNlYXJjaHwzfHxsaXZlJTIwbXVzaWMlMjBjb25jZXJ0JTIwYmFuZCUyMGphbSUyMHNlc3Npb24lMjBzdGFnZXxlbnwwfHx8fDE3ODgxNjg0OTF8MA&ixlib=rb-4.1.0&q=85",
+      "description": "Band members playing guitar and drums with dramatic stage lighting",
+      "category": "live_showcases"
+    },
+    "guitar_close_up": {
+      "url": "https://images.unsplash.com/photo-1605340406960-f5b496c38b3d?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2OTV8MHwxfHNlYXJjaHw0fHxsaXZlJTIwbXVzaWMlMjBjb25jZXJ0JTIwYmFuZCUyMGphbSUyMHNlc3Npb24lMjBzdGFnZXxlbnwwfHx8fDE3ODgxNjg0OTF8MA&ixlib=rb-4.1.0&q=85",
+      "description": "Guitarist passionately playing electric/bass guitar",
+      "category": "workshops_and_skills"
+    },
+    "stage_setup_gear": {
+      "url": "https://images.unsplash.com/photo-1600779547877-be592ef5aad3?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2OTV8MHwxfHNlYXJjaHwyfHxsaXZlJTIwbXVzaWMlMjBjb25jZXJ0JTIwYmFuZCUyMGphbSUyMHNlc3Npb24lMjBzdGFnZXxlbnwwfHx8fDE3ODgxNjg0OTF8MA&ixlib=rb-4.1.0&q=85",
+      "description": "Stage microphones and drums ready for live campus concert",
+      "category": "semester_roadmap_concert"
+    },
+    "friends_jamming": {
+      "url": "https://images.unsplash.com/photo-1661925501942-b0c9a9eab08e?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA4Mzl8MHwxfHNlYXJjaHwxfHx5b3VuZyUyMG11c2ljaWFucyUyMGZyaWVuZHMlMjBqYW1taW5nJTIwcmVoZWFyc2FsfGVufDB8fHx8MTc4ODE2ODQ5N3ww&ixlib=rb-4.1.0&q=85",
+      "description": "Two passionate students practicing acoustic guitar and vocal harmonies together",
+      "category": "community_philosophy"
+    },
+    "young_band_rehearsal": {
+      "url": "https://images.unsplash.com/photo-1524070915974-97838e0bbbf2?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA4Mzl8MHwxfHNlYXJjaHwyfHx5b3VuZyUyMG11c2ljaWFucyUyMGZyaWVuZHMlMjBqYW1taW5nJTIwcmVoZWFyc2FsfGVufDB8fHx8MTc4ODE2ODQ5N3ww&ixlib=rb-4.1.0&q=85",
+      "description": "High energy indie band performing on small club stage",
+      "category": "gallery_item"
+    }
+  },
+  "layout_and_components": {
+    "public_landing_page": {
+      "header_nav": {
+        "style": "Glassmorphism with backdrop-blur-xl bg-[#0B0C10]/80 border-b border-white/10 fixed top-0 w-full z-50",
+        "elements": [
+          "Logo: The Music Club badge with soundwave icon",
+          "Links: #about (Who We Are), #philosophy (Philosophy), #features (What We Do), #roadmap (Semester Roadmap), #leadership (Leadership), #gallery (Live Vault), #contact (Contact)",
+          "CTA Buttons: 'Join Jam' (scrolls to registration/contact) and 'Admin Login' (links to /login)"
+        ]
+      },
+      "hero_section": {
+        "style": "Asymmetric hero with high-contrast headline, animated acoustic soundwave pill, dual CTAs, live stats ribbon (0 Barriers, 100+ Jams, 10-Week Roadmap)",
+        "headline": "Your Stage. Your Voice. Unlimited Possibilities.",
+        "subtitle": "A vibrant home for passion, expression, and pure acoustic energy. Built to empower every musician, vocalist, and enthusiast across all genres."
+      },
+      "core_philosophy_bento": {
+        "style": "Tetris Grid (col-span-8 and col-span-4) with border highlights, interactive sound tags, and high contrast cards",
+        "cards": [
+          "Self-Expression First (Canvas for original voice, electric/acoustic/beats)",
+          "Zero Hierarchy Policy (No seniority barriers, equal stage for all)",
+          "A Stage Without Boundaries (Classical acoustic to modern electronic soundscapes)"
+        ]
+      },
+      "what_we_do_cards": {
+        "items": [
+          {"title": "Jam Sessions", "badge": "Weekly", "desc": "Weekly unstructured jam sessions where members collaborate, improvise, and create original sounds in Jam Room #2."},
+          {"title": "Skill Workshops", "badge": "Bi-Weekly", "desc": "Hands-on vocal coaching, instrument techniques, DAW audio production, and live stage presence."},
+          {"title": "Live Showcases", "badge": "Monthly", "desc": "Campus open mics, acoustic spotlight nights, and annual high-energy festival concert."}
+        ]
+      },
+      "semester_roadmap": {
+        "style": "Kinetic timeline with connected glowing track, week badges, and milestone cards",
+        "milestones": [
+          {"week": "Week 1", "title": "Meetup", "desc": "Orientation night, acoustic icebreakers, and team introductions."},
+          {"week": "Week 3", "title": "Jams", "desc": "First open jam sessions and genre crossover groups."},
+          {"week": "Week 6", "title": "Open Mic", "desc": "First live performance showcase for all new members."},
+          {"week": "Week 10", "title": "Concert", "desc": "Annual grand campus music festival and showcase."}
+        ]
+      },
+      "leadership_section": {
+        "style": "Dual co-director spotlight cards with role badges and quote tags",
+        "leaders": [
+          {"name": "Chanakya", "role": "Creative Direction & Event Coordination", "desc": "Focusing on creative direction, event coordination, and strategic planning for seamlessly executed jams and live showcases."},
+          {"name": "Siddharth", "role": "Community & Gear Operations", "desc": "Facilitating member ideas, equipment operations in Jam Room #2, and fostering an open, hierarchy-free community."}
+        ]
+      },
+      "public_gallery_section": {
+        "style": "Masonry/Tetris grid of event photos with tag filters (All, Jams, Concerts, Workshops), zoom modal, and caption overlays"
+      },
+      "contact_and_footer": {
+        "style": "Deep obsidian container with neon accent borders, Jam Room #2 coordinates, direct email link sidchan901@gmail.com, and Google Form application button"
+      }
+    },
+    "authentication_flows": {
+      "login_page": {
+        "route": "/login",
+        "style": "High-impact split card with music club art on left and streamlined login form on right",
+        "features": [
+          "Email & Password login with validation",
+          "Google OAuth login button (configured + mocked fallback for local dev)",
+          "'Forgot Password?' trigger leading to OTP modal or 3-step page",
+          "Demo quick-login buttons for the two Admins (Chanakya & Siddharth)"
+        ]
+      },
+      "forgot_password_3_steps": {
+        "route": "/forgot-password",
+        "steps": [
+          "Step 1: Enter Registered Email -> calls backend /api/auth/forgot-password, generates 6-digit OTP, simulates email dispatch with notification toast + test helper",
+          "Step 2: 6-Digit OTP Verification -> using Shadcn InputOTP component with timer and resend button",
+          "Step 3: Reset Password -> New password & Confirm password inputs with strength indicator and direct login redirect"
+        ]
+      }
+    },
+    "admin_dashboard": {
+      "route": "/admin",
+      "style": "High density tactical dark dashboard with sidebar navigation, stats summary bar, and responsive header",
+      "sections": [
+        {
+          "id": "overview",
+          "title": "Club Command Center",
+          "widgets": ["Total Active Members", "Upcoming Events", "Media Gallery Assets", "Recent Jam Applications"]
+        },
+        {
+          "id": "members",
+          "title": "Members Management",
+          "actions": ["Search members", "Filter by role (Vocalist, Guitarist, Drummer, Producer, Enthusiast)", "Filter by status (Active, Pending Approval, Inactive)", "Add Member modal", "Approve/Reject member", "Delete member"]
+        },
+        {
+          "id": "events",
+          "title": "Events & Roadmap Manager",
+          "actions": ["Create new event (Title, Type: Jam / Workshop / Open Mic / Concert, Date & Time, Location, Description, Capacity)", "Edit existing event", "Publish/Unpublish", "Delete event"]
+        },
+        {
+          "id": "gallery",
+          "title": "Media & Stage Gallery",
+          "actions": ["Upload photo (URL or image upload)", "Tag event type", "Set caption & photographer", "Delete / Archive photo", "Preview in lightbox"]
+        },
+        {
+          "id": "profile",
+          "title": "Admin Profile & Credentials",
+          "actions": ["Switch admin account view (Chanakya / Siddharth)", "Change password with old password validation", "Update contact email and bio"]
+        }
+      ]
+    }
+  },
+  "default_admin_accounts": [
+    {
+      "name": "Chanakya",
+      "email": "chanakya@musicclub.com",
+      "role": "Co-Director (Creative Direction & Events)",
+      "default_password": "AdminPassword123!"
+    },
+    {
+      "name": "Siddharth",
+      "email": "sidchan901@gmail.com",
+      "role": "Co-Director (Gear Operations & Community)",
+      "default_password": "AdminPassword123!"
+    }
+  ],
+  "testing_attributes": {
+    "rule": "Every button, input, link, tab, modal trigger, and data item MUST have explicit data-testid attributes formatted in kebab-case."
+  },
+  "UNIVERSAL GUIDELINES FOR MAIN AGENT": [
+    "Never use generic centered layouts or bland corporate SaaS styling. This is an electrifying, soulful campus music collective.",
+    "Ensure dark theme looks rich and velvety using #0B0C10 base with #12141C card surfaces and #F97316 / #EF4444 / #A855F7 accent glows.",
+    "Do not use transparent background in header or modal overlays without backdrop-blur and semi-opaque background.",
+    "Keep all copy and contact references intact: Chanakya, Siddharth, Jam Room #2, sidchan901@gmail.com, and semester roadmap (Meetup, Jams, Open Mic, Concert).",
+    "Include Google OAuth login with Google client id integration and graceful fallback for dev testing.",
+    "Implement the 3-step OTP password reset flow cleanly with sonner toast notifications and test OTP visibility."
+  ]
+}
