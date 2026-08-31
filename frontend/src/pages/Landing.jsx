@@ -1,8 +1,9 @@
 import { Link } from "react-router-dom";
 import { Logo, WaveBars } from "@/components/Brand";
-import { Calendar, Mic2, Users, Zap, Shield, Sparkles, ArrowRight, MapPin, Mail, Guitar, Music } from "lucide-react";
+import { Calendar, Mic2, Users, Zap, Shield, Sparkles, ArrowRight, MapPin, Mail, Guitar, Music, Ticket, X } from "lucide-react";
 import { useEffect, useState } from "react";
-import { api } from "@/lib/api";
+import { api, formatApiError } from "@/lib/api";
+import { toast } from "sonner";
 
 const IMG = {
   hero: "https://images.unsplash.com/photo-1565035010268-a3816f98589a?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2OTV8MHwxfHNlYXJjaHwxfHxsaXZlJTIwbXVzaWMlMjBjb25jZXJ0JTIwYmFuZCUyMGphbSUyMHNlc3Npb24lMjBzdGFnZXxlbnwwfHx8fDE3ODgxNjg0OTF8MA&ixlib=rb-4.1.0&q=85",
@@ -22,6 +23,7 @@ function Header() {
           <a href="#about" className="hover:text-orange-400 transition-colors" data-testid="nav-about">Who We Are</a>
           <a href="#features" className="hover:text-orange-400 transition-colors" data-testid="nav-features">What We Do</a>
           <a href="#events" className="hover:text-orange-400 transition-colors" data-testid="nav-events">Events</a>
+          <Link to="/gallery" className="hover:text-orange-400 transition-colors" data-testid="nav-gallery">Gallery</Link>
           <a href="#roadmap" className="hover:text-orange-400 transition-colors" data-testid="nav-roadmap">Roadmap</a>
           <a href="#contact" className="hover:text-orange-400 transition-colors" data-testid="nav-contact">Contact</a>
         </nav>
@@ -159,9 +161,51 @@ function Features() {
   );
 }
 
+function GuestRsvpModal({ event, onClose }) {
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [guests, setGuests] = useState(1);
+  const [busy, setBusy] = useState(false);
+
+  const submit = async (e) => {
+    e.preventDefault();
+    setBusy(true);
+    try {
+      await api.post(`/public/events/${event.id}/rsvp`, { name, email, guests: Number(guests) });
+      toast.success(`You're in — see you at ${event.title}!`);
+      onClose();
+    } catch (err) {
+      toast.error(formatApiError(err.response?.data?.detail));
+    } finally { setBusy(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur flex items-center justify-center p-4" onClick={onClose}>
+      <div className="card p-6 w-full max-w-md relative" onClick={(e) => e.stopPropagation()} data-testid="guest-rsvp-modal">
+        <button onClick={onClose} className="absolute top-4 right-4 text-slate-400 hover:text-white" data-testid="rsvp-modal-close"><X size={18} /></button>
+        <div className="text-xs font-mono uppercase tracking-widest text-orange-400 mb-2">RSVP · {event.event_type}</div>
+        <h3 className="font-display text-2xl font-bold mb-2">{event.title}</h3>
+        <p className="text-sm text-slate-400 mb-5">{new Date(event.date).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })} · {event.location}</p>
+        <form onSubmit={submit} className="space-y-3">
+          <input className="input-field" placeholder="Your name" value={name} onChange={(e) => setName(e.target.value)} required data-testid="rsvp-name-input" />
+          <input className="input-field" type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} required data-testid="rsvp-email-input" />
+          <div>
+            <label className="text-xs font-mono uppercase tracking-widest text-slate-400 mb-2 block">How many seats?</label>
+            <input className="input-field" type="number" min={1} max={10} value={guests} onChange={(e) => setGuests(e.target.value)} data-testid="rsvp-guests-input" />
+          </div>
+          <button type="submit" disabled={busy} className="btn-primary w-full flex items-center justify-center gap-2" data-testid="rsvp-submit-btn"><Ticket size={16} /> {busy ? "Reserving..." : "Confirm RSVP"}</button>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 function UpcomingEvents() {
   const [events, setEvents] = useState([]);
   const [sessions, setSessions] = useState([]);
+  const [rsvpEvent, setRsvpEvent] = useState(null);
+  const backend = process.env.REACT_APP_BACKEND_URL;
+  const resolveUrl = (u) => (u?.startsWith("/api") ? `${backend}${u}` : u);
 
   useEffect(() => {
     api.get("/public/events").then((r) => setEvents(r.data.events || [])).catch(() => {});
@@ -174,7 +218,7 @@ function UpcomingEvents() {
         <div className="mb-14 max-w-2xl">
           <div className="text-xs font-mono uppercase tracking-[0.3em] text-orange-400 mb-4">// Upcoming</div>
           <h2 className="font-display text-4xl lg:text-5xl font-black leading-tight">Events & <span className="gradient-text">Sessions</span></h2>
-          <p className="text-slate-400 mt-4">Curated by Chanakya & Siddharth. Published live from Command Center.</p>
+          <p className="text-slate-400 mt-4">Curated by Chanakya & Siddharth. RSVP in one tap.</p>
         </div>
 
         <div className="grid lg:grid-cols-2 gap-8">
@@ -187,15 +231,20 @@ function UpcomingEvents() {
               {events.length === 0 && <div className="text-sm text-slate-500 italic">No events published yet — check back soon.</div>}
               {events.map((e) => (
                 <div key={e.id} className="card p-5 flex gap-4">
-                  {e.image_url && <img src={e.image_url} alt={e.title} className="w-24 h-24 object-cover rounded-lg" />}
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-1">
+                  {e.image_url && <img src={resolveUrl(e.image_url)} alt={e.title} className="w-24 h-24 object-cover rounded-lg flex-shrink-0" />}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1 flex-wrap">
                       <span className="text-[10px] font-mono uppercase tracking-widest text-orange-300 border border-orange-500/30 rounded-full px-2 py-0.5">{e.event_type}</span>
                       <span className="text-xs text-slate-500 font-mono">{new Date(e.date).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}</span>
                     </div>
                     <div className="font-display text-lg font-bold">{e.title}</div>
                     <div className="text-xs text-slate-400 mt-1 line-clamp-2">{e.description}</div>
-                    <div className="text-[11px] text-slate-500 mt-2 flex items-center gap-1"><MapPin size={11} /> {e.location}</div>
+                    <div className="flex items-center justify-between mt-3">
+                      <div className="text-[11px] text-slate-500 flex items-center gap-1"><MapPin size={11} /> {e.location}</div>
+                      <button onClick={() => setRsvpEvent(e)} className="text-xs font-semibold text-orange-300 border border-orange-500/40 rounded-full px-3 py-1 hover:bg-orange-500/10 flex items-center gap-1.5" data-testid={`rsvp-btn-${e.id}`}>
+                        <Ticket size={12} /> RSVP
+                      </button>
+                    </div>
                   </div>
                 </div>
               ))}
@@ -222,6 +271,46 @@ function UpcomingEvents() {
               ))}
             </div>
           </div>
+        </div>
+      </div>
+      {rsvpEvent && <GuestRsvpModal event={rsvpEvent} onClose={() => setRsvpEvent(null)} />}
+    </section>
+  );
+}
+
+function GalleryPreview() {
+  const [items, setItems] = useState([]);
+  const backend = process.env.REACT_APP_BACKEND_URL;
+  const resolveUrl = (u) => (u?.startsWith("/api") ? `${backend}${u}` : u);
+
+  useEffect(() => {
+    api.get("/public/gallery").then((r) => setItems((r.data.gallery || []).slice(0, 6))).catch(() => {});
+  }, []);
+
+  return (
+    <section id="gallery" className="py-24 px-6 border-t border-white/5">
+      <div className="max-w-7xl mx-auto">
+        <div className="flex items-start justify-between mb-10 flex-wrap gap-4">
+          <div className="max-w-2xl">
+            <div className="text-xs font-mono uppercase tracking-[0.3em] text-orange-400 mb-4">// Live Vault</div>
+            <h2 className="font-display text-4xl lg:text-5xl font-black leading-tight">Straight from <span className="gradient-text">Jam Room #2.</span></h2>
+            <p className="text-slate-400 mt-4">Frames from jams, workshops, and open mics.</p>
+          </div>
+          <Link to="/gallery" className="btn-ghost text-sm flex items-center gap-2" data-testid="see-full-gallery-btn">
+            See full gallery <ArrowRight size={14} />
+          </Link>
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3" data-testid="gallery-preview">
+          {items.map((it, i) => (
+            <Link key={it.id} to="/gallery" className={`relative overflow-hidden rounded-xl card p-0 aspect-square group ${i === 0 ? "col-span-2 row-span-2 aspect-auto" : ""}`}>
+              <img src={resolveUrl(it.image_url)} alt={it.caption} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/70 to-transparent opacity-0 group-hover:opacity-100 transition flex flex-col justify-end p-3">
+                <div className="text-[10px] font-mono uppercase tracking-widest text-orange-300">{it.tag}</div>
+                <div className="text-xs font-semibold line-clamp-2">{it.caption}</div>
+              </div>
+            </Link>
+          ))}
+          {items.length === 0 && <div className="col-span-full text-slate-500 italic text-center py-8">Gallery is warming up — upload the first photo from the admin dashboard.</div>}
         </div>
       </div>
     </section>
@@ -350,6 +439,7 @@ export default function Landing() {
       <About />
       <Features />
       <UpcomingEvents />
+      <GalleryPreview />
       <Roadmap />
       <Leadership />
       <Contact />

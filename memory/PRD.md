@@ -21,6 +21,20 @@ Landing page reference: The Music Club | Express Yourself — a campus music col
 - **DB**: MongoDB (`music_club_db`) with collections: `users`, `password_reset_otps`, `login_attempts`, `events`, `sessions`, `gallery`. Unique indexes on `users.email`, `users.id`, and `password_reset_otps.email`.
 - **Email**: Resend for OTP delivery with branded HTML template. Falls back to log-only dev mode if `RESEND_API_KEY` empty.
 
+## Implemented (2026-02, iteration 2)
+- **Google Login (admins only)**: `POST /api/auth/google/callback` + `/auth/callback` frontend route using Emergent-managed Google Auth. Allowlist enforced (both admin emails only). "Sign in with Google" button on Login page.
+- **Gallery photo uploads (Emergent Object Storage)**: `POST /api/gallery/upload` multipart, ≤8MB, jpg/png/webp. Metadata stored in Mongo `gallery` collection with `storage_path`. Public read via `GET /api/files/{path}`.
+- **Public Gallery page** at `/gallery` with tag filters (All/Jams/Concerts/Workshops/Open Mic), masonry-style grid + lightbox. 6-photo preview section on landing page.
+- **Event RSVPs (both modes)**:
+  - Public guest RSVP: `POST /api/public/events/{id}/rsvp` with name+email+guests. Duplicate-email + capacity checks.
+  - Member one-click RSVP: `POST /api/events/{id}/rsvp` + `DELETE` to cancel + `GET /api/me/rsvps`.
+  - Admin RSVP viewer: `GET /api/events/{id}/rsvps` + modal button on Events admin page.
+  - RSVP button on landing event cards; Member Dashboard `/member` for logged-in members.
+- **Admin Members enhancements**:
+  - Invite by Email — `POST /api/members/invite` creates member with random temp password and emails credentials via Resend.
+  - Bulk CSV import — `POST /api/members/bulk` accepts `email,name,instrument` CSV, optional invite email per row.
+- **Role-based routing**: members redirected to `/member`, admins to `/admin`.
+
 ## Implemented (2026-02, iteration 1)
 - Landing page mirroring the artifact: hero, philosophy grid, features, live events/sessions feed, roadmap timeline, leadership, contact.
 - Auth: `/api/auth/login`, `/logout`, `/me`, `/refresh`, `/forgot-password`, `/verify-otp`, `/reset-password`, `/change-password`

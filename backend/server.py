@@ -8,16 +8,19 @@ ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
 
 import os
+import io
+import csv
 import asyncio
 import logging
 import secrets
 import bcrypt
 import jwt
+import requests
 import resend
 from datetime import datetime, timezone, timedelta
 from typing import List, Optional, Literal
 
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, Request, Response, status
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, Request, Response, status, UploadFile, File, Form, Header, Query
 from fastapi.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel, Field, EmailStr, ConfigDict
@@ -40,6 +43,71 @@ db = client[os.environ["DB_NAME"]]
 
 resend.api_key = os.environ.get("RESEND_API_KEY", "")
 SENDER_EMAIL = os.environ.get("SENDER_EMAIL", "onboarding@resend.dev")
+
+# ---------- Emergent Object Storage ----------
+STORAGE_BASE = (os.environ.get("INTEGRATION_PROXY_URL") or "").strip() or "https://integrations.emergentagent.com"
+STORAGE_URL = STORAGE_BASE.rstrip("/") + "/objstore/api/v1/storage"
+EMERGENT_KEY = os.environ.get("EMERGENT_LLM_KEY", "")
+APP_NAME = os.environ.get("APP_NAME", "music-club")
+storage_key: Optional[str] = None
+
+ALLOWED_GOOGLE_ADMINS = {
+    e.strip().lower() for e in os.environ.get("ALLOWED_GOOGLE_ADMIN_EMAILS", "").split(",") if e.strip()
+}
+
+MIME_MAP = {"jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png", "webp": "image/webp"}
+ALLOWED_UPLOAD_TYPES = {"image/jpeg", "image/png", "image/webp"}
+MAX_UPLOAD_BYTES = 8 * 1024 * 1024  # 8 MB
+
+
+def init_storage(force: bool = False) -> Optional[str]:
+    global storage_key
+    if storage_key and not force:
+        return storage_key
+    if not EMERGENT_KEY:
+        return None
+    try:
+        r = requests.post(f"{STORAGE_URL}/init", json={"emergent_key": EMERGENT_KEY}, timeout=30)
+        r.raise_for_status()
+        storage_key = r.json()["storage_key"]
+        return storage_key
+    except Exception as e:
+        logger.error(f"init_storage failed: {e}")
+        return None
+
+
+def put_object(path: str, data: bytes, content_type: str) -> dict:
+    key = init_storage()
+    if not key:
+        raise HTTPException(status_code=500, detail="Object storage not initialized")
+    r = requests.put(
+        f"{STORAGE_URL}/objects/{path}",
+        headers={"X-Storage-Key": key, "Content-Type": content_type},
+        data=data,
+        timeout=120,
+    )
+    if r.status_code == 404:
+        key = init_storage(force=True)
+        r = requests.put(
+            f"{STORAGE_URL}/objects/{path}",
+            headers={"X-Storage-Key": key, "Content-Type": content_type},
+            data=data,
+            timeout=120,
+        )
+    r.raise_for_status()
+    return r.json()
+
+
+def get_object(path: str) -> tuple[bytes, str]:
+    key = init_storage()
+    if not key:
+        raise HTTPException(status_code=500, detail="Object storage not initialized")
+    r = requests.get(f"{STORAGE_URL}/objects/{path}", headers={"X-Storage-Key": key}, timeout=60)
+    if r.status_code == 404:
+        key = init_storage(force=True)
+        r = requests.get(f"{STORAGE_URL}/objects/{path}", headers={"X-Storage-Key": key}, timeout=60)
+    r.raise_for_status()
+    return r.content, r.headers.get("Content-Type", "application/octet-stream")
 
 # ---------- Helpers ----------
 def now_utc() -> datetime:
@@ -277,6 +345,22 @@ class GalleryUpdate(BaseModel):
     image_url: Optional[str] = None
     tag: Optional[Literal["Jams", "Concerts", "Workshops", "Open Mic"]] = None
     photographer: Optional[str] = None
+
+
+class MemberInviteBody(BaseModel):
+    email: EmailStr
+    name: str
+    instrument: Optional[str] = None
+
+
+class RSVPBody(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    email: EmailStr
+    guests: int = Field(default=1, ge=1, le=10)
+
+
+class GoogleCallbackBody(BaseModel):
+    session_id: str
 
 
 # ---------- App ----------
@@ -555,6 +639,301 @@ _crud_endpoints("sessions", "sessions", SessionCreate, SessionUpdate, sort_field
 _crud_endpoints("gallery", "gallery", GalleryCreate, GalleryUpdate, sort_field="created_at")
 
 
+# ---------- Google OAuth (Emergent Auth) — Admins Only ----------
+# REMINDER: DO NOT HARDCODE THE URL, OR ADD ANY FALLBACKS OR REDIRECT URLS, THIS BREAKS THE AUTH
+@api.post("/auth/google/callback")
+async def google_callback(body: GoogleCallbackBody, response: Response):
+    try:
+        r = requests.get(
+            "https://demobackend.emergentagent.com/auth/v1/env/oauth/session-data",
+            headers={"X-Session-ID": body.session_id},
+            timeout=15,
+        )
+        r.raise_for_status()
+        data = r.json()
+    except Exception as e:
+        logger.error(f"Google session-data failed: {e}")
+        raise HTTPException(status_code=401, detail="Invalid Google session")
+
+    email = (data.get("email") or "").lower().strip()
+    if not email:
+        raise HTTPException(status_code=401, detail="No email on Google profile")
+    if email not in ALLOWED_GOOGLE_ADMINS:
+        raise HTTPException(status_code=403, detail="This Google account is not authorized for admin access")
+
+    user = await db.users.find_one({"email": email}, {"_id": 0})
+    if not user:
+        # Should already be seeded, but guard anyway
+        user = {
+            "id": str(uuid.uuid4()),
+            "email": email,
+            "name": data.get("name") or "Admin",
+            "password_hash": hash_password(secrets.token_urlsafe(16)),
+            "role": "admin",
+            "status": "active",
+            "created_at": now_utc().isoformat(),
+        }
+        await db.users.insert_one(dict(user))
+    else:
+        await db.users.update_one({"email": email}, {"$set": {"role": "admin", "status": "active", "picture": data.get("picture")}})
+
+    access = create_access_token(user["id"], user["email"], "admin")
+    refresh = create_refresh_token(user["id"])
+    set_auth_cookies(response, access, refresh)
+    return {"user": user_public(user), "access_token": access}
+
+
+# ---------- Gallery Upload (Object Storage) ----------
+@api.post("/gallery/upload")
+async def gallery_upload(
+    file: UploadFile = File(...),
+    caption: str = Form(...),
+    tag: str = Form("Jams"),
+    photographer: str = Form(""),
+    admin: dict = Depends(require_admin),
+):
+    if file.content_type not in ALLOWED_UPLOAD_TYPES:
+        raise HTTPException(status_code=400, detail="Only JPG, PNG, or WEBP images are allowed")
+    data = await file.read()
+    if len(data) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=400, detail="File exceeds 8 MB limit")
+    if tag not in {"Jams", "Concerts", "Workshops", "Open Mic"}:
+        tag = "Jams"
+
+    ext = (file.filename.rsplit(".", 1)[-1] if file.filename and "." in file.filename else "jpg").lower()
+    if ext not in MIME_MAP:
+        ext = "jpg"
+    path = f"{APP_NAME}/gallery/{admin['id']}/{uuid.uuid4()}.{ext}"
+    result = put_object(path, data, file.content_type or MIME_MAP[ext])
+    stored_path = result["path"]
+    image_url = f"/api/files/{stored_path}"
+
+    doc = {
+        "id": str(uuid.uuid4()),
+        "caption": caption,
+        "image_url": image_url,
+        "storage_path": stored_path,
+        "tag": tag,
+        "photographer": photographer or admin.get("name"),
+        "content_type": file.content_type,
+        "size": len(data),
+        "is_deleted": False,
+        "created_at": now_utc().isoformat(),
+        "created_by": admin["id"],
+    }
+    await db.gallery.insert_one(dict(doc))
+    doc.pop("_id", None)
+    return {"item": doc}
+
+
+@api.get("/files/{path:path}")
+async def serve_file(path: str):
+    # Gallery images are meant to be public. Ensure the file is a known, non-deleted gallery item.
+    record = await db.gallery.find_one({"storage_path": path, "is_deleted": {"$ne": True}}, {"_id": 0})
+    if not record:
+        raise HTTPException(status_code=404, detail="File not found")
+    data, content_type = get_object(path)
+    return Response(content=data, media_type=record.get("content_type", content_type))
+
+
+# ---------- Member Invite + Bulk Import ----------
+async def _send_invite_email(email: str, name: str, password: str) -> None:
+    subject = "You're in — The Music Club"
+    login_url = os.environ.get("PUBLIC_APP_URL", "")
+    html = f"""
+    <table width='100%' cellpadding='0' cellspacing='0' style='background:#0B0C10;padding:32px 0;font-family:Arial,sans-serif;'>
+      <tr><td align='center'>
+        <table width='560' cellpadding='0' cellspacing='0' style='background:#12141C;border:1px solid rgba(255,255,255,0.08);border-radius:16px;padding:40px;color:#FFFFFF;'>
+          <tr><td>
+            <h1 style='margin:0 0 8px 0;font-size:24px;color:#F97316;letter-spacing:-0.5px;'>The Music Club</h1>
+            <p style='margin:0 0 24px 0;font-size:13px;color:#94A3B8;'>You're invited</p>
+            <p style='margin:0 0 16px 0;font-size:15px;line-height:1.6;'>Hey {name or 'there'},</p>
+            <p style='margin:0 0 16px 0;font-size:15px;line-height:1.6;color:#CBD5E1;'>Your Music Club membership is ready. Use these credentials to sign in and RSVP to jams, workshops, and open mics.</p>
+            <div style='background:#0B0C10;border:1px solid rgba(249,115,22,0.3);border-radius:10px;padding:16px 20px;margin:0 0 20px 0;font-family:monospace;color:#FFFFFF;'>
+              <div style='font-size:12px;color:#94A3B8;'>Email</div>
+              <div style='font-size:15px;margin-bottom:8px;'>{email}</div>
+              <div style='font-size:12px;color:#94A3B8;'>Temporary password</div>
+              <div style='font-size:15px;'>{password}</div>
+            </div>
+            <p style='margin:0 0 20px 0;font-size:13px;color:#94A3B8;'>Please change this password after your first login.</p>
+            <hr style='border:none;border-top:1px solid rgba(255,255,255,0.08);margin:32px 0 16px 0;'/>
+            <p style='margin:0;font-size:12px;color:#64748B;'>The Music Club - Your Stage. Your Voice.</p>
+          </td></tr>
+        </table>
+      </td></tr>
+    </table>
+    """
+    if not resend.api_key:
+        logger.warning(f"[DEV] Invite for {email} — password: {password}")
+        return
+    try:
+        await asyncio.to_thread(resend.Emails.send, {"from": SENDER_EMAIL, "to": [email], "subject": subject, "html": html})
+    except Exception as e:
+        logger.error(f"Invite email send failed for {email}: {e}")
+
+
+@api.post("/members/invite")
+async def invite_member(body: MemberInviteBody, admin: dict = Depends(require_admin)):
+    email = body.email.lower().strip()
+    if await db.users.find_one({"email": email}):
+        raise HTTPException(status_code=409, detail="Email already registered")
+    temp_password = secrets.token_urlsafe(9)
+    doc = {
+        "id": str(uuid.uuid4()),
+        "email": email,
+        "name": body.name,
+        "password_hash": hash_password(temp_password),
+        "role": "member",
+        "status": "active",
+        "instrument": body.instrument,
+        "bio": None,
+        "invited_by": admin["id"],
+        "created_at": now_utc().isoformat(),
+    }
+    await db.users.insert_one(dict(doc))
+    await _send_invite_email(email, body.name, temp_password)
+    return {"member": {k: v for k, v in doc.items() if k not in ("password_hash", "_id")}, "invited": True}
+
+
+@api.post("/members/bulk")
+async def bulk_import_members(
+    file: UploadFile = File(...),
+    send_invite: bool = Form(False),
+    admin: dict = Depends(require_admin),
+):
+    if not file.filename or not file.filename.lower().endswith(".csv"):
+        raise HTTPException(status_code=400, detail="Upload a .csv file")
+    raw = (await file.read()).decode("utf-8", errors="ignore")
+    reader = csv.DictReader(io.StringIO(raw))
+    created, skipped, errors = 0, 0, []
+    for i, row in enumerate(reader, start=2):
+        try:
+            email = (row.get("email") or "").strip().lower()
+            name = (row.get("name") or "").strip()
+            instrument = (row.get("instrument") or "").strip() or None
+            if not email or not name:
+                errors.append(f"Row {i}: missing email or name")
+                continue
+            if await db.users.find_one({"email": email}):
+                skipped += 1
+                continue
+            temp_password = secrets.token_urlsafe(9)
+            await db.users.insert_one({
+                "id": str(uuid.uuid4()),
+                "email": email,
+                "name": name,
+                "password_hash": hash_password(temp_password),
+                "role": "member",
+                "status": "active",
+                "instrument": instrument,
+                "bio": None,
+                "created_at": now_utc().isoformat(),
+                "invited_by": admin["id"],
+            })
+            created += 1
+            if send_invite:
+                await _send_invite_email(email, name, temp_password)
+        except Exception as e:
+            errors.append(f"Row {i}: {e}")
+    return {"created": created, "skipped_existing": skipped, "errors": errors}
+
+
+# ---------- Event RSVPs ----------
+def _rsvp_doc(event_id: str, name: str, email: str, guests: int, user_id: Optional[str] = None) -> dict:
+    return {
+        "id": str(uuid.uuid4()),
+        "event_id": event_id,
+        "user_id": user_id,
+        "name": name,
+        "email": email.lower().strip(),
+        "guests": guests,
+        "status": "confirmed",
+        "created_at": now_utc().isoformat(),
+    }
+
+
+async def _get_event_or_404(event_id: str) -> dict:
+    event = await db.events.find_one({"id": event_id}, {"_id": 0})
+    if not event:
+        raise HTTPException(status_code=404, detail="Event not found")
+    return event
+
+
+async def _check_capacity(event: dict, adding: int) -> None:
+    if not event.get("capacity"):
+        return
+    agg = await db.rsvps.aggregate([
+        {"$match": {"event_id": event["id"], "status": "confirmed"}},
+        {"$group": {"_id": None, "total": {"$sum": "$guests"}}},
+    ]).to_list(1)
+    used = agg[0]["total"] if agg else 0
+    if used + adding > event["capacity"]:
+        raise HTTPException(status_code=409, detail=f"Event is full ({used}/{event['capacity']} seats booked)")
+
+
+@api.post("/public/events/{event_id}/rsvp")
+async def public_rsvp(event_id: str, body: RSVPBody):
+    event = await _get_event_or_404(event_id)
+    if not event.get("published", True):
+        raise HTTPException(status_code=404, detail="Event not found")
+    existing = await db.rsvps.find_one({"event_id": event_id, "email": body.email.lower().strip()})
+    if existing:
+        raise HTTPException(status_code=409, detail="You've already RSVP'd for this event with this email")
+    await _check_capacity(event, body.guests)
+    doc = _rsvp_doc(event_id, body.name, body.email, body.guests)
+    await db.rsvps.insert_one(dict(doc))
+    doc.pop("_id", None)
+    return {"rsvp": doc}
+
+
+@api.post("/events/{event_id}/rsvp")
+async def member_rsvp(event_id: str, user: dict = Depends(get_current_user)):
+    event = await _get_event_or_404(event_id)
+    existing = await db.rsvps.find_one({"event_id": event_id, "user_id": user["id"]})
+    if existing:
+        raise HTTPException(status_code=409, detail="Already RSVP'd")
+    await _check_capacity(event, 1)
+    doc = _rsvp_doc(event_id, user["name"], user["email"], 1, user_id=user["id"])
+    await db.rsvps.insert_one(dict(doc))
+    doc.pop("_id", None)
+    return {"rsvp": doc}
+
+
+@api.delete("/events/{event_id}/rsvp")
+async def cancel_member_rsvp(event_id: str, user: dict = Depends(get_current_user)):
+    result = await db.rsvps.delete_one({"event_id": event_id, "user_id": user["id"]})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="No RSVP found")
+    return {"success": True}
+
+
+@api.get("/events/{event_id}/rsvps")
+async def list_event_rsvps(event_id: str, admin: dict = Depends(require_admin)):
+    await _get_event_or_404(event_id)
+    docs = await db.rsvps.find({"event_id": event_id}, {"_id": 0}).sort("created_at", 1).to_list(2000)
+    total = sum(d.get("guests", 1) for d in docs)
+    return {"rsvps": docs, "total_seats": total}
+
+
+@api.get("/me/rsvps")
+async def my_rsvps(user: dict = Depends(get_current_user)):
+    docs = await db.rsvps.find({"user_id": user["id"]}, {"_id": 0}).sort("created_at", -1).to_list(500)
+    # Enrich with event info
+    for r in docs:
+        ev = await db.events.find_one({"id": r["event_id"]}, {"_id": 0})
+        r["event"] = ev
+    return {"rsvps": docs}
+
+
+@api.get("/public/events/{event_id}/rsvp-count")
+async def public_rsvp_count(event_id: str):
+    agg = await db.rsvps.aggregate([
+        {"$match": {"event_id": event_id, "status": "confirmed"}},
+        {"$group": {"_id": None, "total": {"$sum": "$guests"}}},
+    ]).to_list(1)
+    return {"total": agg[0]["total"] if agg else 0}
+
+
 # ---------- Stats ----------
 @api.get("/admin/stats")
 async def admin_stats(admin: dict = Depends(require_admin)):
@@ -563,7 +942,8 @@ async def admin_stats(admin: dict = Depends(require_admin)):
         "admins": await db.users.count_documents({"role": "admin"}),
         "events": await db.events.count_documents({}),
         "sessions": await db.sessions.count_documents({}),
-        "gallery": await db.gallery.count_documents({}),
+        "gallery": await db.gallery.count_documents({"is_deleted": {"$ne": True}}),
+        "rsvps": await db.rsvps.count_documents({}),
     }
 
 
@@ -579,6 +959,16 @@ async def on_startup():
     await db.login_attempts.create_index("identifier")
     for coll in ("events", "sessions", "gallery"):
         await db[coll].create_index("id", unique=True)
+    await db.rsvps.create_index("id", unique=True)
+    await db.rsvps.create_index([("event_id", 1), ("email", 1)])
+    await db.rsvps.create_index([("event_id", 1), ("user_id", 1)])
+
+    # Warm up object storage
+    try:
+        if init_storage():
+            logger.info("Object storage initialized")
+    except Exception as e:
+        logger.error(f"Object storage init failed: {e}")
 
     admins = [
         (os.environ["ADMIN1_EMAIL"], os.environ["ADMIN1_NAME"], os.environ["ADMIN1_PASSWORD"]),

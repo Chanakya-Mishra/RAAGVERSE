@@ -17,6 +17,10 @@ export function AuthProvider({ children }) {
   }, []);
 
   useEffect(() => {
+    // If returning from OAuth callback, skip /me check — AuthCallback will exchange session_id
+    if (typeof window !== "undefined" && window.location.hash?.includes("session_id=")) {
+      return;
+    }
     refresh();
   }, [refresh]);
 
@@ -25,7 +29,7 @@ export function AuthProvider({ children }) {
     try {
       const { data } = await api.post("/auth/login", { email, password });
       setUser(data.user);
-      return { ok: true };
+      return { ok: true, user: data.user };
     } catch (e) {
       const msg = formatApiError(e.response?.data?.detail) || e.message;
       setError(msg);

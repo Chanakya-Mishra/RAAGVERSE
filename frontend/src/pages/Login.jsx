@@ -5,6 +5,12 @@ import { Logo, WaveBars } from "@/components/Brand";
 import { Eye, EyeOff, LogIn, ArrowLeft } from "lucide-react";
 import { toast } from "sonner";
 
+// REMINDER: DO NOT HARDCODE THE URL, OR ADD ANY FALLBACKS OR REDIRECT URLS, THIS BREAKS THE AUTH
+function googleLogin() {
+  const redirectUrl = window.location.origin + "/admin";
+  window.location.href = `https://auth.emergentagent.com/?redirect=${encodeURIComponent(redirectUrl)}`;
+}
+
 export default function Login() {
   const { login } = useAuth();
   const nav = useNavigate();
@@ -20,7 +26,7 @@ export default function Login() {
     setLoading(false);
     if (r.ok) {
       toast.success("Welcome back to the club.");
-      nav("/admin");
+      nav(r.user?.role === "member" ? "/member" : "/admin");
     } else {
       toast.error(r.error || "Login failed");
     }
@@ -105,6 +111,23 @@ export default function Login() {
             >
               {loading ? "Signing in..." : <>Sign In <LogIn size={16} /></>}
             </button>
+
+            <div className="relative py-2 flex items-center gap-3 text-[10px] font-mono uppercase tracking-widest text-slate-500">
+              <div className="h-px bg-white/10 flex-1" /> or <div className="h-px bg-white/10 flex-1" />
+            </div>
+
+            <button
+              type="button"
+              onClick={googleLogin}
+              className="w-full border border-white/10 hover:border-orange-500/40 bg-white/[0.02] hover:bg-white/[0.04] transition rounded-full py-3 flex items-center justify-center gap-3 text-sm font-medium"
+              data-testid="google-login-btn"
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden>
+                <path fill="#EA4335" d="M12 10.2v3.6h5.06c-.22 1.4-1.63 4.1-5.06 4.1a5.9 5.9 0 1 1 0-11.8c1.85 0 3.09.79 3.8 1.47l2.6-2.5C16.87 3.61 14.66 2.7 12 2.7 6.87 2.7 2.7 6.87 2.7 12s4.17 9.3 9.3 9.3c5.37 0 8.93-3.77 8.93-9.08 0-.61-.07-1.08-.16-1.53H12z"/>
+              </svg>
+              Sign in with Google (Admins only)
+            </button>
+            <div className="text-[11px] text-slate-500 text-center leading-relaxed">Only <span className="text-orange-300 font-mono">mchanakya64@gmail.com</span> and <span className="text-orange-300 font-mono">siddharthsharma2649@gmail.com</span> can sign in with Google.</div>
           </form>
         </div>
       </div>
