@@ -28,7 +28,7 @@ function Header() {
           <a href="#contact" className="hover:text-orange-400 transition-colors" data-testid="nav-contact">Contact</a>
         </nav>
         <div className="flex items-center gap-3">
-          <Link to="/login" className="btn-ghost text-sm" data-testid="header-login-btn">Admin Login</Link>
+          <Link to="/login" className="btn-ghost text-sm" data-testid="header-login-btn">Login</Link>
         </div>
       </div>
     </header>
@@ -441,7 +441,7 @@ function Contact() {
           <a href="https://docs.google.com/forms/d/e/1FAIpQLScsO9gD-O4nGW4aXOM4NsRoOHQibhJJvplMzmFCs4XHkZBTVQ/viewform?usp=dialog" target="_blank" rel="noreferrer" className="btn-primary flex items-center gap-2" data-testid="contact-form-btn">
             Get In Touch <ArrowRight size={16} />
           </a>
-          <Link to="/login" className="btn-ghost" data-testid="contact-login-btn">Admin Login</Link>
+          <Link to="/login" className="btn-ghost" data-testid="contact-login-btn">Login</Link>
         </div>
         <div className="grid sm:grid-cols-3 gap-4 text-left">
           {[
