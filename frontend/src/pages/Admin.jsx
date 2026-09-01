@@ -3,7 +3,7 @@ import { NavLink, Navigate, useNavigate } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import { api, formatApiError } from "@/lib/api";
 import { Logo, WaveBars } from "@/components/Brand";
-import { LayoutDashboard, Users, Calendar, Mic2, Image as ImageIcon, UserCog, LogOut, Plus, Trash2, Edit3, X, Check, Send, UploadCloud, Ticket, ClipboardList } from "lucide-react";
+import { LayoutDashboard, Users, Calendar, Mic2, Image as ImageIcon, UserCog, LogOut, Plus, Trash2, Edit3, X, Check, Send, UploadCloud, Ticket, ClipboardList, Sparkles, BellRing, Handshake } from "lucide-react";
 import { toast } from "sonner";
 
 function Shell({ children }) {
@@ -19,6 +19,7 @@ function Shell({ children }) {
     { to: "/admin/events", Icon: Calendar, label: "Events" },
     { to: "/admin/sessions", Icon: Mic2, label: "Sessions" },
     { to: "/admin/gallery", Icon: ImageIcon, label: "Gallery" },
+    { to: "/admin/sponsors", Icon: Handshake, label: "Sponsors" },
     { to: "/admin/profile", Icon: UserCog, label: "Profile" },
   ];
 
@@ -92,24 +93,44 @@ function StatCard({ label, value, Icon, color }) {
 
 export function Overview() {
   const [stats, setStats] = useState(null);
-  useEffect(() => { api.get("/admin/stats").then((r) => setStats(r.data)).catch(() => {}); }, []);
+  const [busy, setBusy] = useState(false);
+  const load = () => api.get("/admin/stats").then((r) => setStats(r.data)).catch(() => {});
+  useEffect(() => { load(); }, []);
+
+  const sendReminders = async () => {
+    setBusy(true);
+    try {
+      const { data } = await api.post("/admin/send-reminders");
+      toast.success(`${data.reminders_sent} reminder${data.reminders_sent === 1 ? "" : "s"} sent · ${data.events_checked} event${data.events_checked === 1 ? "" : "s"} in window`);
+    } catch (e) { toast.error(formatApiError(e.response?.data?.detail)); }
+    finally { setBusy(false); }
+  };
+
   return (
     <Shell>
-      <PageHeader title="Overview" subtitle="Snapshot of your club — members, events, sessions, and gallery all in one view." />
+      <PageHeader
+        title="Overview"
+        subtitle="Snapshot of your club — members, events, sessions, gallery, waitlist, and sponsors."
+        action={<button onClick={sendReminders} disabled={busy} className="btn-ghost text-sm flex items-center gap-2" data-testid="send-reminders-btn"><BellRing size={14} /> {busy ? "Sending..." : "Send Rehearsal Reminders"}</button>}
+      />
       <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4" data-testid="stats-grid">
-        <StatCard label="Active Members" value={stats?.members ?? "—"} Icon={Users} color="bg-orange-500/15 text-orange-400" />
+        <StatCard label="Members" value={stats?.members ?? "—"} Icon={Users} color="bg-orange-500/15 text-orange-400" />
         <StatCard label="Events" value={stats?.events ?? "—"} Icon={Calendar} color="bg-violet-500/15 text-violet-400" />
+        <StatCard label="Confirmed RSVPs" value={stats?.rsvps ?? "—"} Icon={Ticket} color="bg-emerald-500/15 text-emerald-400" />
+        <StatCard label="Waitlisted" value={stats?.waitlist ?? "—"} Icon={ClipboardList} color="bg-amber-500/15 text-amber-400" />
         <StatCard label="Sessions" value={stats?.sessions ?? "—"} Icon={Mic2} color="bg-red-500/15 text-red-400" />
-        <StatCard label="Gallery Items" value={stats?.gallery ?? "—"} Icon={ImageIcon} color="bg-emerald-500/15 text-emerald-400" />
+        <StatCard label="Gallery" value={stats?.gallery ?? "—"} Icon={ImageIcon} color="bg-sky-500/15 text-sky-400" />
+        <StatCard label="Sponsors" value={stats?.sponsors ?? "—"} Icon={Handshake} color="bg-pink-500/15 text-pink-400" />
+        <StatCard label="Admins" value={stats?.admins ?? "—"} Icon={Sparkles} color="bg-fuchsia-500/15 text-fuchsia-400" />
       </div>
       <div className="mt-10 grid lg:grid-cols-2 gap-6">
         <div className="card p-6">
-          <div className="font-display text-xl font-bold mb-2">Manage the vibe.</div>
-          <div className="text-sm text-slate-400 leading-relaxed">Use the sidebar to invite members, publish jams, and curate the live gallery. Every action here shows up on the public site instantly.</div>
+          <div className="font-display text-xl font-bold mb-2 flex items-center gap-2"><BellRing size={18} className="text-orange-400" /> Auto reminders</div>
+          <div className="text-sm text-slate-400 leading-relaxed">Rehearsal reminders are sent automatically every 30 minutes for events happening 12–36 hours from now. Waitlisted RSVPs are auto-promoted the moment a seat opens up.</div>
         </div>
         <div className="card p-6">
-          <div className="font-display text-xl font-bold mb-2">Zero hierarchy — full ops.</div>
-          <div className="text-sm text-slate-400 leading-relaxed">Both Chanakya and Siddharth have equal privileges. Everything you do is logged, versioned, and reversible.</div>
+          <div className="font-display text-xl font-bold mb-2 flex items-center gap-2"><Handshake size={18} className="text-pink-400" /> Sponsorship strip</div>
+          <div className="text-sm text-slate-400 leading-relaxed">Active sponsors appear on the landing page. Add them from the Sponsors tab — pick a tier, drop a logo, and set the display order.</div>
         </div>
       </div>
     </Shell>
@@ -364,32 +385,54 @@ function CrudPage({ resource, title, subtitle, columns, fields, defaults, testid
 
 function EventRsvpsButton({ event }) {
   const [open, setOpen] = useState(false);
-  const [rsvps, setRsvps] = useState([]);
-  const [total, setTotal] = useState(0);
+  const [data, setData] = useState({ confirmed: [], waitlisted: [], total_seats: 0, capacity: null });
 
   const load = async () => {
-    try { const { data } = await api.get(`/events/${event.id}/rsvps`); setRsvps(data.rsvps || []); setTotal(data.total_seats || 0); }
+    try { const { data } = await api.get(`/events/${event.id}/rsvps`); setData(data); }
     catch (e) { toast.error(formatApiError(e.response?.data?.detail)); }
   };
   useEffect(() => { if (open) load(); }, [open]);
+
+  const removeRsvp = async (r) => {
+    if (!confirm(`Remove ${r.name}? A waitlisted guest will be auto-promoted.`)) return;
+    try { await api.delete(`/events/${event.id}/rsvps/${r.id}`); toast.success("Removed"); load(); }
+    catch (e) { toast.error(formatApiError(e.response?.data?.detail)); }
+  };
 
   return (
     <>
       <button onClick={() => setOpen(true)} className="text-slate-400 hover:text-emerald-400" title="View RSVPs" data-testid={`view-rsvps-${event.id}`}><ClipboardList size={14} /></button>
       <Modal open={open} onClose={() => setOpen(false)} title={`RSVPs · ${event.title}`}>
-        <div className="text-sm text-slate-400 mb-4">Total confirmed seats: <span className="text-orange-400 font-mono font-bold">{total}</span> / {event.capacity || "∞"}</div>
-        <div className="max-h-80 overflow-y-auto space-y-2" data-testid="rsvp-list">
-          {rsvps.length === 0 && <div className="text-slate-500 italic text-sm">No RSVPs yet.</div>}
-          {rsvps.map((r) => (
-            <div key={r.id} className="card p-3 flex items-center justify-between">
+        <div className="grid grid-cols-2 gap-3 mb-4">
+          <div className="card p-3">
+            <div className="text-[10px] uppercase tracking-widest text-slate-500 font-mono">Confirmed</div>
+            <div className="font-display text-2xl font-black text-orange-400">{data.total_seats} <span className="text-sm text-slate-400 font-normal font-body">/ {data.capacity || "∞"}</span></div>
+          </div>
+          <div className="card p-3">
+            <div className="text-[10px] uppercase tracking-widest text-slate-500 font-mono">Waitlist</div>
+            <div className="font-display text-2xl font-black text-amber-400">{data.waitlisted.length}</div>
+          </div>
+        </div>
+        <div className="max-h-64 overflow-y-auto space-y-2" data-testid="rsvp-list">
+          <div className="text-[11px] uppercase tracking-widest text-emerald-400 font-mono">Confirmed</div>
+          {data.confirmed.length === 0 && <div className="text-slate-500 italic text-sm">Nobody yet.</div>}
+          {data.confirmed.map((r) => (
+            <div key={r.id} className="card p-3 flex items-center justify-between" data-testid={`rsvp-confirmed-${r.id}`}>
               <div>
                 <div className="text-sm font-semibold">{r.name}</div>
-                <div className="text-xs text-slate-500">{r.email}</div>
+                <div className="text-xs text-slate-500">{r.email} · {r.guests} seat{r.guests !== 1 ? "s" : ""}</div>
               </div>
-              <div className="text-right">
-                <div className="text-xs text-orange-400 font-mono">{r.guests} seat{r.guests !== 1 ? "s" : ""}</div>
-                <div className="text-[10px] text-slate-500 font-mono uppercase">{r.user_id ? "Member" : "Guest"}</div>
+              <button onClick={() => removeRsvp(r)} className="text-slate-400 hover:text-red-400" title="Remove" data-testid={`remove-rsvp-${r.id}`}><X size={14} /></button>
+            </div>
+          ))}
+          {data.waitlisted.length > 0 && <div className="text-[11px] uppercase tracking-widest text-amber-400 font-mono mt-4">Waitlist</div>}
+          {data.waitlisted.map((r, i) => (
+            <div key={r.id} className="card p-3 flex items-center justify-between" data-testid={`rsvp-waitlist-${r.id}`}>
+              <div>
+                <div className="text-sm font-semibold">#{i + 1} — {r.name}</div>
+                <div className="text-xs text-slate-500">{r.email} · {r.guests} seat{r.guests !== 1 ? "s" : ""}</div>
               </div>
+              <button onClick={() => removeRsvp(r)} className="text-slate-400 hover:text-red-400" title="Remove" data-testid={`remove-rsvp-${r.id}`}><X size={14} /></button>
             </div>
           ))}
         </div>
@@ -534,6 +577,34 @@ export function Gallery() {
         </form>
       </Modal>
     </Shell>
+  );
+}
+
+export function Sponsors() {
+  return (
+    <CrudPage
+      resource="sponsors"
+      title="Sponsors"
+      subtitle="Campus brands backing the club. Active sponsors appear on the landing page strip."
+      testid="sponsor"
+      defaults={{ name: "", tagline: "", website_url: "", logo_url: "", tier: "Community", order: 100, active: true }}
+      columns={[
+        { key: "name", className: "font-display text-lg font-bold" },
+        { key: "tier", label: "Tier" },
+        { key: "tagline", label: "Tagline" },
+        { key: "website_url", label: "Website" },
+        { key: "active", label: "Active", render: (i) => (i.active ? "Yes" : "No") },
+      ]}
+      fields={[
+        { key: "name", label: "Sponsor Name", required: true },
+        { key: "tagline", label: "Tagline (one line)" },
+        { key: "website_url", label: "Website URL" },
+        { key: "logo_url", label: "Logo URL" },
+        { key: "tier", label: "Tier", type: "select", options: ["Gold", "Silver", "Bronze", "Community"] },
+        { key: "order", label: "Display order (lower = first)", type: "number" },
+        { key: "active", label: "Show on landing page", type: "checkbox" },
+      ]}
+    />
   );
 }
 

@@ -171,8 +171,12 @@ function GuestRsvpModal({ event, onClose }) {
     e.preventDefault();
     setBusy(true);
     try {
-      await api.post(`/public/events/${event.id}/rsvp`, { name, email, guests: Number(guests) });
-      toast.success(`You're in — see you at ${event.title}!`);
+      const { data } = await api.post(`/public/events/${event.id}/rsvp`, { name, email, guests: Number(guests) });
+      if (data.rsvp?.status === "waitlisted") {
+        toast.success(`Waitlisted — you're #${data.rsvp.waitlist_position} in line. We'll email if a seat opens.`);
+      } else {
+        toast.success(`You're in — see you at ${event.title}!`);
+      }
       onClose();
     } catch (err) {
       toast.error(formatApiError(err.response?.data?.detail));
@@ -193,6 +197,7 @@ function GuestRsvpModal({ event, onClose }) {
             <label className="text-xs font-mono uppercase tracking-widest text-slate-400 mb-2 block">How many seats?</label>
             <input className="input-field" type="number" min={1} max={10} value={guests} onChange={(e) => setGuests(e.target.value)} data-testid="rsvp-guests-input" />
           </div>
+          <div className="text-[11px] text-slate-500">If the event is full, you'll be added to the waitlist and auto-promoted if a seat opens.</div>
           <button type="submit" disabled={busy} className="btn-primary w-full flex items-center justify-center gap-2" data-testid="rsvp-submit-btn"><Ticket size={16} /> {busy ? "Reserving..." : "Confirm RSVP"}</button>
         </form>
       </div>
@@ -385,6 +390,46 @@ function Leadership() {
   );
 }
 
+function Sponsors() {
+  const [sponsors, setSponsors] = useState([]);
+  useEffect(() => { api.get("/public/sponsors").then((r) => setSponsors(r.data.sponsors || [])).catch(() => {}); }, []);
+  if (sponsors.length === 0) return null;
+  const tierColor = { Gold: "text-yellow-300 border-yellow-500/40", Silver: "text-slate-200 border-slate-400/40", Bronze: "text-orange-300 border-orange-600/40", Community: "text-violet-300 border-violet-500/40" };
+  return (
+    <section id="sponsors" className="py-16 px-6 border-t border-white/5">
+      <div className="max-w-7xl mx-auto">
+        <div className="flex items-center justify-between mb-8 flex-wrap gap-3">
+          <div>
+            <div className="text-xs font-mono uppercase tracking-[0.3em] text-orange-400 mb-2">// Backed By</div>
+            <h3 className="font-display text-2xl font-black">Our <span className="gradient-text">Sponsors</span></h3>
+          </div>
+          <a href="mailto:sidchan901@gmail.com?subject=Sponsor%20The%20Music%20Club" className="btn-ghost text-xs" data-testid="become-sponsor-btn">Become a sponsor</a>
+        </div>
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3" data-testid="sponsors-strip">
+          {sponsors.map((s) => {
+            const cls = tierColor[s.tier] || tierColor.Community;
+            const inner = (
+              <div className={`card p-4 flex flex-col gap-2 h-full transition hover:-translate-y-1`}>
+                <div className="flex items-center justify-between">
+                  <span className={`text-[9px] font-mono uppercase tracking-widest border rounded-full px-2 py-0.5 ${cls}`}>{s.tier}</span>
+                  {s.logo_url ? <img src={s.logo_url} alt="" className="w-8 h-8 rounded object-cover" /> : null}
+                </div>
+                <div className="font-display text-base font-bold">{s.name}</div>
+                {s.tagline && <div className="text-xs text-slate-400 leading-snug line-clamp-2">{s.tagline}</div>}
+              </div>
+            );
+            return s.website_url ? (
+              <a key={s.id} href={s.website_url} target="_blank" rel="noreferrer" data-testid={`sponsor-${s.id}`}>{inner}</a>
+            ) : (
+              <div key={s.id} data-testid={`sponsor-${s.id}`}>{inner}</div>
+            );
+          })}
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function Contact() {
   return (
     <section id="contact" className="py-24 px-6 border-t border-white/5">
@@ -442,6 +487,7 @@ export default function Landing() {
       <GalleryPreview />
       <Roadmap />
       <Leadership />
+      <Sponsors />
       <Contact />
       <Footer />
     </div>

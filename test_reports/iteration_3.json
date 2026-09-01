@@ -1,0 +1,36 @@
+{
+  "summary": "Iteration 3 backend testing complete. 18/18 pytest cases passed against the public preview URL covering: (1) Waitlist overflow — public and member RSVPs beyond capacity return status='waitlisted' with correct waitlist_position rather than 409; (2) Admin GET /events/{id}/rsvps returns confirmed[], waitlisted[], total_seats, capacity, waitlist_count with correct counts; (3) Auto-promotion — admin DELETE /events/{id}/rsvps/{rsvp_id} promotes first eligible waitlisted (FIFO); member DELETE /events/{id}/rsvp triggers same logic; edge case where 1st waitlisted has too many guests (3) for freed room (2) correctly skips to next fitting waitlisted (1 guest); (4) /me/rsvps returns waitlist_position and event enrichment; (5) POST /admin/send-reminders returns {events_checked, reminders_sent, window} with reminders_sent>=1 for event 24h out, rsvp doc gets reminder_sent_at, endpoint requires admin, and reminder_sent_at persists preventing re-send; (6) /public/sponsors returns only active sponsors sorted by (order asc, created_at desc); seed sponsors Campus FM, Riff & Roast, Strings Bazaar all present; (7) Full sponsors CRUD works (create/list/update/delete), setting active=false hides from /public/sponsors while admin GET still shows it; (8) /admin/stats now includes rsvps, waitlist, sponsors keys; (9) Regressions passed — /auth/login, /auth/me, /public/events, /public/gallery, /members list, forgot-password OTP, brute-force lockout (429 after 5 failed attempts).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration3.py",
+    "/app/test_reports/pytest/iteration3.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py is now ~1264 lines — well past the 700-line split threshold. Recommend splitting into routers (auth, members, events, rsvps/waitlist, sponsors, reminders, storage). Iteration 2 also flagged this.",
+    "_promote_waitlist has a small race: between _confirmed_seats() and find_one+update_one under concurrent cancels, two workers could each promote the same waitlisted RSVP or overshoot capacity. Consider using an atomic findOneAndUpdate with an $expr guard, or a transaction across the free+promote block.",
+    "public_rsvp still uses non-atomic capacity check → could over-book under concurrent load (flagged in iteration 2, still present). With waitlist as fallback the impact is now smaller (extras become waitlisted rather than 409), but if two racers slip past the check both become confirmed and briefly exceed capacity.",
+    "_dispatch_reminders uses ISO string comparison on the date field. This works because dates are stored as ISO 8601 with consistent timezone, but a mixed timezone/naive date entry (e.g., admin creating an event with a naive isoformat like '2026-06-01T18:00:00') would compare lexicographically and could break the window filter. Consider normalizing all event dates to UTC ISO with 'Z' on write, or storing native datetime.",
+    "Background reminder loop is created via asyncio.create_task on FastAPI startup with no cancellation on shutdown; under uvicorn reload this can leak tasks and hold DB handles briefly. Store the task and cancel it in on_shutdown for cleanliness.",
+    "Sponsor tier is Literal-restricted (Gold/Silver/Bronze/Community) but 'active' payload accepts any truthy — fine due to Pydantic bool coercion. No issue, just noting the tier constraint is enforced only server-side; ensure frontend selector matches.",
+    "Duplicate email uniqueness in public_rsvp is only checked via find_one, not a unique index — under concurrent RSVPs a rare double-insert is possible. There is already an index on (event_id, email) but it is not unique."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration3.py (new pytest suite for iteration 3)"
+  ],
+  "success_rate": {"backend": "100% (18/18)", "frontend": "not tested (backend-only request)"},
+  "test_credentials": "Admin1 mchanakya64@gmail.com/Admin@123 verified; Admin2 verified in prior iteration. Members created dynamically (test_it3_*) and cleaned up.",
+  "seed_data_creation": "All test resources (TEST WL events, TEST Reminder event, test_it3_* members, TEST Sponsor) tracked in created_ids and deleted via module-scope cleanup fixture. No lingering test artifacts expected. Seed sponsors from startup (Campus FM/Riff & Roast/Strings Bazaar) confirmed present and untouched.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Three passing regression suites now exist: /app/tests/backend_smoke.py (iter1), /app/backend/tests/test_iteration2.py (iter2), /app/backend/tests/test_iteration3.py (iter3, 18 tests). All idempotent. Iteration 3 additions: waitlist overflow with waitlist_position, admin_delete_rsvp with auto-promote, member cancel auto-promote, FIFO promotion with guest-fit skip, /admin/send-reminders (idempotent via reminder_sent_at on rsvp doc), full sponsors CRUD with public sponsors endpoint. Background reminder loop runs every 30 min but tests call the manual endpoint. Note: the reminder loop kicks off at startup — if run repeatedly with the same events in the 12–36h window, subsequent tests should create fresh events (which iteration3 already does).",
+  "rca of the issue": "N/A — no issues found in iteration 3 features."
+}

@@ -8,7 +8,7 @@ import ForgotPassword from "@/pages/ForgotPassword";
 import AuthCallback from "@/pages/AuthCallback";
 import MemberDashboard from "@/pages/MemberDashboard";
 import PublicGallery from "@/pages/PublicGallery";
-import { Overview, Members, Events, Sessions, Gallery, Profile } from "@/pages/Admin";
+import { Overview, Members, Events, Sessions, Gallery, Sponsors, Profile } from "@/pages/Admin";
 
 function Router() {
   const location = useLocation();
@@ -28,6 +28,7 @@ function Router() {
       <Route path="/admin/events" element={<Events />} />
       <Route path="/admin/sessions" element={<Sessions />} />
       <Route path="/admin/gallery" element={<Gallery />} />
+      <Route path="/admin/sponsors" element={<Sponsors />} />
       <Route path="/admin/profile" element={<Profile />} />
     </Routes>
   );

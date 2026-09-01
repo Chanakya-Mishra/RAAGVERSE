@@ -32,8 +32,15 @@ export default function MemberDashboard() {
   const rsvpMap = new Map(myRsvps.map((r) => [r.event_id, r]));
 
   const rsvp = async (eventId) => {
-    try { await api.post(`/events/${eventId}/rsvp`); toast.success("You're in — see you at the jam!"); load(); }
-    catch (e) { toast.error(formatApiError(e.response?.data?.detail)); }
+    try {
+      const { data } = await api.post(`/events/${eventId}/rsvp`);
+      if (data.rsvp?.status === "waitlisted") {
+        toast.success(`Waitlisted — you're #${data.rsvp.waitlist_position} in line. We'll email if a seat opens.`);
+      } else {
+        toast.success("You're in — see you at the jam!");
+      }
+      load();
+    } catch (e) { toast.error(formatApiError(e.response?.data?.detail)); }
   };
   const cancel = async (eventId) => {
     if (!confirm("Cancel your RSVP?")) return;
@@ -87,7 +94,7 @@ export default function MemberDashboard() {
                       <div className="text-xs text-slate-400 mt-1 line-clamp-2 mb-3">{e.description}</div>
                       {r ? (
                         <button onClick={() => cancel(e.id)} className="text-sm text-red-300 border border-red-500/30 bg-red-500/10 rounded-full px-3 py-1.5 flex items-center gap-1.5 hover:bg-red-500/20 transition" data-testid={`cancel-rsvp-${e.id}`}>
-                          <XCircle size={14} /> Cancel RSVP
+                          <XCircle size={14} /> Cancel {r.status === "waitlisted" ? `Waitlist (#${r.waitlist_position || "?"})` : "RSVP"}
                         </button>
                       ) : (
                         <button onClick={() => rsvp(e.id)} className="btn-primary text-sm py-1.5 px-4 flex items-center gap-1.5" data-testid={`rsvp-${e.id}`}>
@@ -112,7 +119,11 @@ export default function MemberDashboard() {
                 <div key={r.id} className="card p-4">
                   <div className="text-xs text-slate-500 font-mono">{r.event?.event_type} · {r.event?.date && new Date(r.event.date).toLocaleDateString()}</div>
                   <div className="font-display text-base font-bold mt-1">{r.event?.title || "Event"}</div>
-                  <div className="text-[11px] text-emerald-400 mt-1 uppercase tracking-widest font-mono">Confirmed</div>
+                  {r.status === "waitlisted" ? (
+                    <div className="text-[11px] text-amber-400 mt-1 uppercase tracking-widest font-mono">Waitlist · #{r.waitlist_position || "?"}</div>
+                  ) : (
+                    <div className="text-[11px] text-emerald-400 mt-1 uppercase tracking-widest font-mono">Confirmed</div>
+                  )}
                 </div>
               ))}
             </div>

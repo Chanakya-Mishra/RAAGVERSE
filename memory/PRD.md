@@ -21,6 +21,11 @@ Landing page reference: The Music Club | Express Yourself — a campus music col
 - **DB**: MongoDB (`music_club_db`) with collections: `users`, `password_reset_otps`, `login_attempts`, `events`, `sessions`, `gallery`. Unique indexes on `users.email`, `users.id`, and `password_reset_otps.email`.
 - **Email**: Resend for OTP delivery with branded HTML template. Falls back to log-only dev mode if `RESEND_API_KEY` empty.
 
+## Implemented (2026-02, iteration 3)
+- **Waitlist Overflow**: Beyond-capacity RSVPs (guest or member) are auto-waitlisted with `waitlist_position` returned instead of 409. On any cancel (member self-cancel or admin remove), the first eligible waitlisted person is auto-promoted to confirmed and emailed via Resend. Skips waitlisted entries whose guest count exceeds freed room. Admin RSVP modal shows Confirmed + Waitlist lists with remove-any action.
+- **Rehearsal Reminders**: Background `asyncio` loop (`_reminder_loop`) runs every 30 minutes on startup, finds confirmed RSVPs for events happening 12–36 h out, and emails each once (idempotent via `reminder_sent_at`). Admin "Send Rehearsal Reminders" button on Overview triggers `POST /api/admin/send-reminders` manually.
+- **Sponsor Spotlight**: `sponsors` collection + full admin CRUD at `/admin/sponsors` (name, tagline, website_url, logo_url, tier: Gold/Silver/Bronze/Community, order, active). Public strip on landing page between Leadership and Contact via `GET /api/public/sponsors` (active only, sorted by order). "Become a sponsor" mailto CTA.
+
 ## Implemented (2026-02, iteration 2)
 - **Google Login (admins only)**: `POST /api/auth/google/callback` + `/auth/callback` frontend route using Emergent-managed Google Auth. Allowlist enforced (both admin emails only). "Sign in with Google" button on Login page.
 - **Gallery photo uploads (Emergent Object Storage)**: `POST /api/gallery/upload` multipart, ≤8MB, jpg/png/webp. Metadata stored in Mongo `gallery` collection with `storage_path`. Public read via `GET /api/files/{path}`.

@@ -363,6 +363,26 @@ class GoogleCallbackBody(BaseModel):
     session_id: str
 
 
+class SponsorCreate(BaseModel):
+    name: str
+    tagline: Optional[str] = None
+    website_url: Optional[str] = None
+    logo_url: Optional[str] = None
+    tier: Literal["Gold", "Silver", "Bronze", "Community"] = "Community"
+    order: int = 100
+    active: bool = True
+
+
+class SponsorUpdate(BaseModel):
+    name: Optional[str] = None
+    tagline: Optional[str] = None
+    website_url: Optional[str] = None
+    logo_url: Optional[str] = None
+    tier: Optional[Literal["Gold", "Silver", "Bronze", "Community"]] = None
+    order: Optional[int] = None
+    active: Optional[bool] = None
+
+
 # ---------- App ----------
 app = FastAPI(title="The Music Club API")
 api = APIRouter(prefix="/api")
@@ -838,8 +858,8 @@ async def bulk_import_members(
     return {"created": created, "skipped_existing": skipped, "errors": errors}
 
 
-# ---------- Event RSVPs ----------
-def _rsvp_doc(event_id: str, name: str, email: str, guests: int, user_id: Optional[str] = None) -> dict:
+# ---------- Event RSVPs (with Waitlist) ----------
+def _rsvp_doc(event_id: str, name: str, email: str, guests: int, user_id: Optional[str] = None, rsvp_status: str = "confirmed") -> dict:
     return {
         "id": str(uuid.uuid4()),
         "event_id": event_id,
@@ -847,7 +867,7 @@ def _rsvp_doc(event_id: str, name: str, email: str, guests: int, user_id: Option
         "name": name,
         "email": email.lower().strip(),
         "guests": guests,
-        "status": "confirmed",
+        "status": rsvp_status,
         "created_at": now_utc().isoformat(),
     }
 
@@ -859,16 +879,144 @@ async def _get_event_or_404(event_id: str) -> dict:
     return event
 
 
-async def _check_capacity(event: dict, adding: int) -> None:
-    if not event.get("capacity"):
-        return
+async def _confirmed_seats(event_id: str) -> int:
     agg = await db.rsvps.aggregate([
-        {"$match": {"event_id": event["id"], "status": "confirmed"}},
+        {"$match": {"event_id": event_id, "status": "confirmed"}},
         {"$group": {"_id": None, "total": {"$sum": "$guests"}}},
     ]).to_list(1)
-    used = agg[0]["total"] if agg else 0
-    if used + adding > event["capacity"]:
-        raise HTTPException(status_code=409, detail=f"Event is full ({used}/{event['capacity']} seats booked)")
+    return agg[0]["total"] if agg else 0
+
+
+async def _waitlist_position(event_id: str, rsvp_id: str) -> int:
+    docs = await db.rsvps.find({"event_id": event_id, "status": "waitlisted"}, {"id": 1}).sort("created_at", 1).to_list(2000)
+    for i, d in enumerate(docs, start=1):
+        if d.get("id") == rsvp_id:
+            return i
+    return 0
+
+
+async def _resolve_status(event: dict, adding: int) -> str:
+    if not event.get("capacity"):
+        return "confirmed"
+    used = await _confirmed_seats(event["id"])
+    return "confirmed" if (used + adding) <= event["capacity"] else "waitlisted"
+
+
+async def _promote_waitlist(event: dict) -> None:
+    """Fill any freed capacity from the front of the waitlist and email the promoted RSVPs."""
+    if not event.get("capacity"):
+        return
+    while True:
+        used = await _confirmed_seats(event["id"])
+        room = event["capacity"] - used
+        if room <= 0:
+            return
+        next_wait = await db.rsvps.find_one(
+            {"event_id": event["id"], "status": "waitlisted", "guests": {"$lte": room}},
+            sort=[("created_at", 1)],
+        )
+        if not next_wait:
+            return
+        await db.rsvps.update_one({"id": next_wait["id"]}, {"$set": {"status": "confirmed", "promoted_at": now_utc().isoformat()}})
+        asyncio.create_task(_send_promoted_email(next_wait, event))
+
+
+async def _send_promoted_email(rsvp: dict, event: dict) -> None:
+    subject = f"You're in — {event['title']}"
+    html = f"""
+    <table width='100%' cellpadding='0' cellspacing='0' style='background:#0B0C10;padding:32px 0;font-family:Arial,sans-serif;'>
+      <tr><td align='center'>
+        <table width='560' cellpadding='0' cellspacing='0' style='background:#12141C;border:1px solid rgba(255,255,255,0.08);border-radius:16px;padding:40px;color:#FFFFFF;'>
+          <tr><td>
+            <h1 style='margin:0 0 8px 0;font-size:24px;color:#F97316;letter-spacing:-0.5px;'>The Music Club</h1>
+            <p style='margin:0 0 24px 0;font-size:13px;color:#94A3B8;'>Waitlist Promoted</p>
+            <p style='margin:0 0 16px 0;font-size:15px;line-height:1.6;'>Hey {rsvp.get('name') or 'there'},</p>
+            <p style='margin:0 0 20px 0;font-size:15px;line-height:1.6;color:#CBD5E1;'>Great news — a seat opened up for <strong style='color:#F97316;'>{event['title']}</strong> and we bumped you off the waitlist. You're confirmed.</p>
+            <div style='background:#0B0C10;border:1px solid rgba(249,115,22,0.3);border-radius:10px;padding:16px 20px;margin:0 0 20px 0;color:#FFFFFF;'>
+              <div style='font-size:12px;color:#94A3B8;'>When</div>
+              <div style='font-size:15px;margin-bottom:8px;'>{datetime.fromisoformat(event['date']).strftime('%A · %b %d · %I:%M %p') if isinstance(event.get('date'), str) else event.get('date')}</div>
+              <div style='font-size:12px;color:#94A3B8;'>Where</div>
+              <div style='font-size:15px;'>{event.get('location', 'Jam Room #2')}</div>
+            </div>
+            <p style='margin:0;font-size:12px;color:#64748B;'>The Music Club - Your Stage. Your Voice.</p>
+          </td></tr>
+        </table>
+      </td></tr>
+    </table>
+    """
+    if not resend.api_key:
+        logger.warning(f"[DEV] Promoted RSVP for {rsvp['email']} to {event['title']}")
+        return
+    try:
+        await asyncio.to_thread(resend.Emails.send, {"from": SENDER_EMAIL, "to": [rsvp["email"]], "subject": subject, "html": html})
+    except Exception as e:
+        logger.error(f"Promoted email failed for {rsvp['email']}: {e}")
+
+
+async def _send_event_reminder(rsvp: dict, event: dict) -> None:
+    when = event.get("date", "")
+    try:
+        when_str = datetime.fromisoformat(when).strftime("%A · %b %d · %I:%M %p") if isinstance(when, str) else str(when)
+    except Exception:
+        when_str = str(when)
+    subject = f"Tomorrow: {event['title']}"
+    html = f"""
+    <table width='100%' cellpadding='0' cellspacing='0' style='background:#0B0C10;padding:32px 0;font-family:Arial,sans-serif;'>
+      <tr><td align='center'>
+        <table width='560' cellpadding='0' cellspacing='0' style='background:#12141C;border:1px solid rgba(255,255,255,0.08);border-radius:16px;padding:40px;color:#FFFFFF;'>
+          <tr><td>
+            <h1 style='margin:0 0 8px 0;font-size:24px;color:#F97316;letter-spacing:-0.5px;'>The Music Club</h1>
+            <p style='margin:0 0 24px 0;font-size:13px;color:#94A3B8;'>Reminder · See you tomorrow</p>
+            <p style='margin:0 0 12px 0;font-size:15px;line-height:1.6;'>Hey {rsvp.get('name') or 'there'},</p>
+            <p style='margin:0 0 20px 0;font-size:15px;line-height:1.6;color:#CBD5E1;'>Just a nudge — you're locked in for <strong style='color:#F97316;'>{event['title']}</strong>. Bring your instrument, your voice, or just your ears.</p>
+            <div style='background:#0B0C10;border:1px solid rgba(249,115,22,0.3);border-radius:10px;padding:16px 20px;margin:0 0 20px 0;'>
+              <div style='font-size:12px;color:#94A3B8;'>When</div>
+              <div style='font-size:15px;margin-bottom:8px;'>{when_str}</div>
+              <div style='font-size:12px;color:#94A3B8;'>Where</div>
+              <div style='font-size:15px;'>{event.get('location', 'Jam Room #2')}</div>
+            </div>
+            <p style='margin:0 0 8px 0;font-size:13px;color:#94A3B8;'>Need to cancel? Log in to your member dashboard and drop your RSVP so someone on the waitlist can grab your spot.</p>
+            <p style='margin:16px 0 0 0;font-size:12px;color:#64748B;'>The Music Club - Your Stage. Your Voice.</p>
+          </td></tr>
+        </table>
+      </td></tr>
+    </table>
+    """
+    if not resend.api_key:
+        logger.warning(f"[DEV] Reminder for {rsvp['email']} — {event['title']}")
+        return
+    try:
+        await asyncio.to_thread(resend.Emails.send, {"from": SENDER_EMAIL, "to": [rsvp["email"]], "subject": subject, "html": html})
+    except Exception as e:
+        logger.error(f"Reminder email failed for {rsvp['email']}: {e}")
+
+
+async def _dispatch_reminders() -> dict:
+    """Find confirmed RSVPs for events in the next 12–36 hours that haven't been reminded yet."""
+    now = now_utc()
+    lower = (now + timedelta(hours=12)).isoformat()
+    upper = (now + timedelta(hours=36)).isoformat()
+    events = await db.events.find({"date": {"$gte": lower, "$lte": upper}, "published": True}, {"_id": 0}).to_list(500)
+    sent = 0
+    for ev in events:
+        rsvps = await db.rsvps.find({"event_id": ev["id"], "status": "confirmed", "reminder_sent_at": {"$exists": False}}, {"_id": 0}).to_list(2000)
+        for r in rsvps:
+            await _send_event_reminder(r, ev)
+            await db.rsvps.update_one({"id": r["id"]}, {"$set": {"reminder_sent_at": now.isoformat()}})
+            sent += 1
+    return {"events_checked": len(events), "reminders_sent": sent, "window": {"from": lower, "to": upper}}
+
+
+async def _reminder_loop():
+    """Runs forever; checks for reminders every 30 minutes."""
+    while True:
+        try:
+            result = await _dispatch_reminders()
+            if result["reminders_sent"]:
+                logger.info(f"Reminder loop: {result}")
+        except Exception as e:
+            logger.error(f"Reminder loop error: {e}")
+        await asyncio.sleep(30 * 60)
 
 
 @api.post("/public/events/{event_id}/rsvp")
@@ -879,10 +1027,12 @@ async def public_rsvp(event_id: str, body: RSVPBody):
     existing = await db.rsvps.find_one({"event_id": event_id, "email": body.email.lower().strip()})
     if existing:
         raise HTTPException(status_code=409, detail="You've already RSVP'd for this event with this email")
-    await _check_capacity(event, body.guests)
-    doc = _rsvp_doc(event_id, body.name, body.email, body.guests)
+    status_val = await _resolve_status(event, body.guests)
+    doc = _rsvp_doc(event_id, body.name, body.email, body.guests, rsvp_status=status_val)
     await db.rsvps.insert_one(dict(doc))
     doc.pop("_id", None)
+    if status_val == "waitlisted":
+        doc["waitlist_position"] = await _waitlist_position(event_id, doc["id"])
     return {"rsvp": doc}
 
 
@@ -892,10 +1042,12 @@ async def member_rsvp(event_id: str, user: dict = Depends(get_current_user)):
     existing = await db.rsvps.find_one({"event_id": event_id, "user_id": user["id"]})
     if existing:
         raise HTTPException(status_code=409, detail="Already RSVP'd")
-    await _check_capacity(event, 1)
-    doc = _rsvp_doc(event_id, user["name"], user["email"], 1, user_id=user["id"])
+    status_val = await _resolve_status(event, 1)
+    doc = _rsvp_doc(event_id, user["name"], user["email"], 1, user_id=user["id"], rsvp_status=status_val)
     await db.rsvps.insert_one(dict(doc))
     doc.pop("_id", None)
+    if status_val == "waitlisted":
+        doc["waitlist_position"] = await _waitlist_position(event_id, doc["id"])
     return {"rsvp": doc}
 
 
@@ -904,34 +1056,106 @@ async def cancel_member_rsvp(event_id: str, user: dict = Depends(get_current_use
     result = await db.rsvps.delete_one({"event_id": event_id, "user_id": user["id"]})
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="No RSVP found")
+    event = await db.events.find_one({"id": event_id}, {"_id": 0})
+    if event:
+        await _promote_waitlist(event)
+    return {"success": True}
+
+
+@api.delete("/events/{event_id}/rsvps/{rsvp_id}")
+async def admin_delete_rsvp(event_id: str, rsvp_id: str, admin: dict = Depends(require_admin)):
+    result = await db.rsvps.delete_one({"id": rsvp_id, "event_id": event_id})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="RSVP not found")
+    event = await db.events.find_one({"id": event_id}, {"_id": 0})
+    if event:
+        await _promote_waitlist(event)
     return {"success": True}
 
 
 @api.get("/events/{event_id}/rsvps")
 async def list_event_rsvps(event_id: str, admin: dict = Depends(require_admin)):
-    await _get_event_or_404(event_id)
-    docs = await db.rsvps.find({"event_id": event_id}, {"_id": 0}).sort("created_at", 1).to_list(2000)
-    total = sum(d.get("guests", 1) for d in docs)
-    return {"rsvps": docs, "total_seats": total}
+    event = await _get_event_or_404(event_id)
+    all_docs = await db.rsvps.find({"event_id": event_id}, {"_id": 0}).sort("created_at", 1).to_list(2000)
+    confirmed = [d for d in all_docs if d.get("status", "confirmed") == "confirmed"]
+    waitlisted = [d for d in all_docs if d.get("status") == "waitlisted"]
+    total = sum(d.get("guests", 1) for d in confirmed)
+    return {
+        "rsvps": all_docs,
+        "confirmed": confirmed,
+        "waitlisted": waitlisted,
+        "total_seats": total,
+        "capacity": event.get("capacity"),
+        "waitlist_count": len(waitlisted),
+    }
 
 
 @api.get("/me/rsvps")
 async def my_rsvps(user: dict = Depends(get_current_user)):
     docs = await db.rsvps.find({"user_id": user["id"]}, {"_id": 0}).sort("created_at", -1).to_list(500)
-    # Enrich with event info
     for r in docs:
         ev = await db.events.find_one({"id": r["event_id"]}, {"_id": 0})
         r["event"] = ev
+        if r.get("status") == "waitlisted":
+            r["waitlist_position"] = await _waitlist_position(r["event_id"], r["id"])
     return {"rsvps": docs}
 
 
 @api.get("/public/events/{event_id}/rsvp-count")
 async def public_rsvp_count(event_id: str):
-    agg = await db.rsvps.aggregate([
-        {"$match": {"event_id": event_id, "status": "confirmed"}},
-        {"$group": {"_id": None, "total": {"$sum": "$guests"}}},
-    ]).to_list(1)
-    return {"total": agg[0]["total"] if agg else 0}
+    total = await _confirmed_seats(event_id)
+    waitlist = await db.rsvps.count_documents({"event_id": event_id, "status": "waitlisted"})
+    event = await db.events.find_one({"id": event_id}, {"_id": 0}) or {}
+    return {"total": total, "waitlist": waitlist, "capacity": event.get("capacity")}
+
+
+@api.post("/admin/send-reminders")
+async def trigger_reminders(admin: dict = Depends(require_admin)):
+    return await _dispatch_reminders()
+
+
+# ---------- Sponsors ----------
+@api.get("/public/sponsors")
+async def public_sponsors():
+    docs = await db.sponsors.find({"active": True}, {"_id": 0}).sort([("order", 1), ("created_at", -1)]).to_list(200)
+    return {"sponsors": docs}
+
+
+@api.get("/sponsors")
+async def list_sponsors(admin: dict = Depends(require_admin)):
+    docs = await db.sponsors.find({}, {"_id": 0}).sort([("order", 1), ("created_at", -1)]).to_list(500)
+    return {"sponsors": docs}
+
+
+@api.post("/sponsors")
+async def create_sponsor(body: SponsorCreate, admin: dict = Depends(require_admin)):
+    doc = body.model_dump()
+    doc["id"] = str(uuid.uuid4())
+    doc["created_at"] = now_utc().isoformat()
+    doc["created_by"] = admin["id"]
+    await db.sponsors.insert_one(dict(doc))
+    return {"item": doc}
+
+
+@api.put("/sponsors/{sponsor_id}")
+async def update_sponsor(sponsor_id: str, body: SponsorUpdate, admin: dict = Depends(require_admin)):
+    updates = body.model_dump(exclude_none=True)
+    if not updates:
+        raise HTTPException(status_code=400, detail="No updates provided")
+    updates["updated_at"] = now_utc().isoformat()
+    result = await db.sponsors.update_one({"id": sponsor_id}, {"$set": updates})
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Sponsor not found")
+    doc = await db.sponsors.find_one({"id": sponsor_id}, {"_id": 0})
+    return {"item": doc}
+
+
+@api.delete("/sponsors/{sponsor_id}")
+async def delete_sponsor(sponsor_id: str, admin: dict = Depends(require_admin)):
+    result = await db.sponsors.delete_one({"id": sponsor_id})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Sponsor not found")
+    return {"success": True}
 
 
 # ---------- Stats ----------
@@ -943,7 +1167,9 @@ async def admin_stats(admin: dict = Depends(require_admin)):
         "events": await db.events.count_documents({}),
         "sessions": await db.sessions.count_documents({}),
         "gallery": await db.gallery.count_documents({"is_deleted": {"$ne": True}}),
-        "rsvps": await db.rsvps.count_documents({}),
+        "rsvps": await db.rsvps.count_documents({"status": "confirmed"}),
+        "waitlist": await db.rsvps.count_documents({"status": "waitlisted"}),
+        "sponsors": await db.sponsors.count_documents({"active": True}),
     }
 
 
@@ -962,6 +1188,8 @@ async def on_startup():
     await db.rsvps.create_index("id", unique=True)
     await db.rsvps.create_index([("event_id", 1), ("email", 1)])
     await db.rsvps.create_index([("event_id", 1), ("user_id", 1)])
+    await db.rsvps.create_index([("event_id", 1), ("status", 1), ("created_at", 1)])
+    await db.sponsors.create_index("id", unique=True)
 
     # Warm up object storage
     try:
@@ -969,6 +1197,9 @@ async def on_startup():
             logger.info("Object storage initialized")
     except Exception as e:
         logger.error(f"Object storage init failed: {e}")
+
+    # Kick off background reminder loop
+    asyncio.create_task(_reminder_loop())
 
     admins = [
         (os.environ["ADMIN1_EMAIL"], os.environ["ADMIN1_NAME"], os.environ["ADMIN1_PASSWORD"]),
@@ -1017,6 +1248,14 @@ async def on_startup():
             {"id": str(uuid.uuid4()), "caption": "Campus Concert night", "image_url": "https://images.unsplash.com/photo-1600779547877-be592ef5aad3?w=800", "tag": "Concerts", "photographer": "Siddharth", "created_at": now_utc().isoformat()},
         ]
         await db.gallery.insert_many(seed_gallery)
+
+    if await db.sponsors.count_documents({}) == 0:
+        seed_sponsors = [
+            {"id": str(uuid.uuid4()), "name": "Campus FM", "tagline": "Student radio partner", "website_url": "https://example.com", "logo_url": "", "tier": "Gold", "order": 10, "active": True, "created_at": now_utc().isoformat()},
+            {"id": str(uuid.uuid4()), "name": "Riff & Roast", "tagline": "Fuel for late-night jams", "website_url": "https://example.com", "logo_url": "", "tier": "Silver", "order": 20, "active": True, "created_at": now_utc().isoformat()},
+            {"id": str(uuid.uuid4()), "name": "Strings Bazaar", "tagline": "Instrument rentals & repairs", "website_url": "https://example.com", "logo_url": "", "tier": "Bronze", "order": 30, "active": True, "created_at": now_utc().isoformat()},
+        ]
+        await db.sponsors.insert_many(seed_sponsors)
 
 
 @app.on_event("shutdown")
