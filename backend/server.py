@@ -1,4 +1,4 @@
-"""The Music Club - Backend API
+"""Bandish - Backend API
 FastAPI + Motor (MongoDB) + JWT auth + Resend OTP.
 """
 from dotenv import load_dotenv
@@ -212,13 +212,13 @@ async def require_admin(user: dict = Depends(get_current_user)) -> dict:
 
 # ---------- Email ----------
 async def send_otp_email(recipient: str, name: str, otp: str) -> bool:
-    subject = "The Music Club - Password Reset OTP"
+    subject = "Bandish - Password Reset OTP"
     html = f"""
     <table width='100%' cellpadding='0' cellspacing='0' style='background:#0B0C10;padding:32px 0;font-family:Arial,sans-serif;'>
       <tr><td align='center'>
         <table width='560' cellpadding='0' cellspacing='0' style='background:#12141C;border:1px solid rgba(255,255,255,0.08);border-radius:16px;padding:40px;color:#FFFFFF;'>
           <tr><td>
-            <h1 style='margin:0 0 8px 0;font-size:24px;color:#F97316;letter-spacing:-0.5px;'>The Music Club</h1>
+            <h1 style='margin:0 0 8px 0;font-size:24px;color:#F97316;letter-spacing:-0.5px;'>Bandish</h1>
             <p style='margin:0 0 24px 0;font-size:13px;color:#94A3B8;'>Password Reset Request</p>
             <p style='margin:0 0 16px 0;font-size:15px;line-height:1.6;'>Hey {name or 'there'},</p>
             <p style='margin:0 0 24px 0;font-size:15px;line-height:1.6;color:#CBD5E1;'>Use the one-time passcode below to reset your password. It expires in <strong style='color:#F97316;'>10 minutes</strong>.</p>
@@ -229,7 +229,7 @@ async def send_otp_email(recipient: str, name: str, otp: str) -> bool:
             </div>
             <p style='margin:0 0 8px 0;font-size:13px;color:#94A3B8;line-height:1.6;'>If you didn't request this, you can safely ignore this email. Your password stays unchanged.</p>
             <hr style='border:none;border-top:1px solid rgba(255,255,255,0.08);margin:32px 0 16px 0;'/>
-            <p style='margin:0;font-size:12px;color:#64748B;'>The Music Club - Your Stage. Your Voice.</p>
+            <p style='margin:0;font-size:12px;color:#64748B;'>Bandish · Express Yourself.</p>
           </td></tr>
         </table>
       </td></tr>
@@ -384,7 +384,7 @@ class SponsorUpdate(BaseModel):
 
 
 # ---------- App ----------
-app = FastAPI(title="The Music Club API")
+app = FastAPI(title="Bandish API")
 api = APIRouter(prefix="/api")
 
 app.add_middleware(
@@ -398,7 +398,7 @@ app.add_middleware(
 
 @api.get("/")
 async def root():
-    return {"message": "The Music Club API", "status": "online"}
+    return {"message": "Bandish API", "status": "online"}
 
 
 # ---------- Auth Routes ----------
@@ -758,17 +758,17 @@ async def serve_file(path: str):
 
 # ---------- Member Invite + Bulk Import ----------
 async def _send_invite_email(email: str, name: str, password: str) -> None:
-    subject = "You're in — The Music Club"
+    subject = "You're in — Bandish"
     login_url = os.environ.get("PUBLIC_APP_URL", "")
     html = f"""
     <table width='100%' cellpadding='0' cellspacing='0' style='background:#0B0C10;padding:32px 0;font-family:Arial,sans-serif;'>
       <tr><td align='center'>
         <table width='560' cellpadding='0' cellspacing='0' style='background:#12141C;border:1px solid rgba(255,255,255,0.08);border-radius:16px;padding:40px;color:#FFFFFF;'>
           <tr><td>
-            <h1 style='margin:0 0 8px 0;font-size:24px;color:#F97316;letter-spacing:-0.5px;'>The Music Club</h1>
+            <h1 style='margin:0 0 8px 0;font-size:24px;color:#F97316;letter-spacing:-0.5px;'>Bandish</h1>
             <p style='margin:0 0 24px 0;font-size:13px;color:#94A3B8;'>You're invited</p>
             <p style='margin:0 0 16px 0;font-size:15px;line-height:1.6;'>Hey {name or 'there'},</p>
-            <p style='margin:0 0 16px 0;font-size:15px;line-height:1.6;color:#CBD5E1;'>Your Music Club membership is ready. Use these credentials to sign in and RSVP to jams, workshops, and open mics.</p>
+            <p style='margin:0 0 16px 0;font-size:15px;line-height:1.6;color:#CBD5E1;'>Your Bandish membership is ready. Use these credentials to sign in and RSVP to jams, workshops, and open mics.</p>
             <div style='background:#0B0C10;border:1px solid rgba(249,115,22,0.3);border-radius:10px;padding:16px 20px;margin:0 0 20px 0;font-family:monospace;color:#FFFFFF;'>
               <div style='font-size:12px;color:#94A3B8;'>Email</div>
               <div style='font-size:15px;margin-bottom:8px;'>{email}</div>
@@ -777,7 +777,7 @@ async def _send_invite_email(email: str, name: str, password: str) -> None:
             </div>
             <p style='margin:0 0 20px 0;font-size:13px;color:#94A3B8;'>Please change this password after your first login.</p>
             <hr style='border:none;border-top:1px solid rgba(255,255,255,0.08);margin:32px 0 16px 0;'/>
-            <p style='margin:0;font-size:12px;color:#64748B;'>The Music Club - Your Stage. Your Voice.</p>
+            <p style='margin:0;font-size:12px;color:#64748B;'>Bandish · Express Yourself.</p>
           </td></tr>
         </table>
       </td></tr>
@@ -928,7 +928,7 @@ async def _send_promoted_email(rsvp: dict, event: dict) -> None:
       <tr><td align='center'>
         <table width='560' cellpadding='0' cellspacing='0' style='background:#12141C;border:1px solid rgba(255,255,255,0.08);border-radius:16px;padding:40px;color:#FFFFFF;'>
           <tr><td>
-            <h1 style='margin:0 0 8px 0;font-size:24px;color:#F97316;letter-spacing:-0.5px;'>The Music Club</h1>
+            <h1 style='margin:0 0 8px 0;font-size:24px;color:#F97316;letter-spacing:-0.5px;'>Bandish</h1>
             <p style='margin:0 0 24px 0;font-size:13px;color:#94A3B8;'>Waitlist Promoted</p>
             <p style='margin:0 0 16px 0;font-size:15px;line-height:1.6;'>Hey {rsvp.get('name') or 'there'},</p>
             <p style='margin:0 0 20px 0;font-size:15px;line-height:1.6;color:#CBD5E1;'>Great news — a seat opened up for <strong style='color:#F97316;'>{event['title']}</strong> and we bumped you off the waitlist. You're confirmed.</p>
@@ -938,7 +938,7 @@ async def _send_promoted_email(rsvp: dict, event: dict) -> None:
               <div style='font-size:12px;color:#94A3B8;'>Where</div>
               <div style='font-size:15px;'>{event.get('location', 'Jam Room #2')}</div>
             </div>
-            <p style='margin:0;font-size:12px;color:#64748B;'>The Music Club - Your Stage. Your Voice.</p>
+            <p style='margin:0;font-size:12px;color:#64748B;'>Bandish · Express Yourself.</p>
           </td></tr>
         </table>
       </td></tr>
@@ -965,7 +965,7 @@ async def _send_event_reminder(rsvp: dict, event: dict) -> None:
       <tr><td align='center'>
         <table width='560' cellpadding='0' cellspacing='0' style='background:#12141C;border:1px solid rgba(255,255,255,0.08);border-radius:16px;padding:40px;color:#FFFFFF;'>
           <tr><td>
-            <h1 style='margin:0 0 8px 0;font-size:24px;color:#F97316;letter-spacing:-0.5px;'>The Music Club</h1>
+            <h1 style='margin:0 0 8px 0;font-size:24px;color:#F97316;letter-spacing:-0.5px;'>Bandish</h1>
             <p style='margin:0 0 24px 0;font-size:13px;color:#94A3B8;'>Reminder · See you tomorrow</p>
             <p style='margin:0 0 12px 0;font-size:15px;line-height:1.6;'>Hey {rsvp.get('name') or 'there'},</p>
             <p style='margin:0 0 20px 0;font-size:15px;line-height:1.6;color:#CBD5E1;'>Just a nudge — you're locked in for <strong style='color:#F97316;'>{event['title']}</strong>. Bring your instrument, your voice, or just your ears.</p>
@@ -976,7 +976,7 @@ async def _send_event_reminder(rsvp: dict, event: dict) -> None:
               <div style='font-size:15px;'>{event.get('location', 'Jam Room #2')}</div>
             </div>
             <p style='margin:0 0 8px 0;font-size:13px;color:#94A3B8;'>Need to cancel? Log in to your member dashboard and drop your RSVP so someone on the waitlist can grab your spot.</p>
-            <p style='margin:16px 0 0 0;font-size:12px;color:#64748B;'>The Music Club - Your Stage. Your Voice.</p>
+            <p style='margin:16px 0 0 0;font-size:12px;color:#64748B;'>Bandish · Express Yourself.</p>
           </td></tr>
         </table>
       </td></tr>

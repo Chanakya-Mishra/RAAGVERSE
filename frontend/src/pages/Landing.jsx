@@ -470,7 +470,7 @@ function Footer() {
     <footer className="border-t border-white/5 py-10 px-6">
       <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-4">
         <Logo small />
-        <div className="text-xs text-slate-500 font-mono">© {new Date().getFullYear()} The Music Club — Express Yourself.</div>
+        <div className="text-xs text-slate-500 font-mono">© {new Date().getFullYear()} Bandish — Express Yourself.</div>
       </div>
     </footer>
   );

@@ -99,7 +99,7 @@ export default function ForgotPassword() {
               <p className="text-slate-400 text-sm">Enter your registered email — we'll send a 6-digit OTP.</p>
               <div>
                 <label className="text-xs font-mono uppercase tracking-widest text-slate-400 mb-2 block">Email</label>
-                <input type="email" className="input-field" placeholder="you@musicclub.com" value={email} onChange={(e) => setEmail(e.target.value)} required data-testid="fp-email-input" />
+                <input type="email" className="input-field" placeholder="you@bandish.club" value={email} onChange={(e) => setEmail(e.target.value)} required data-testid="fp-email-input" />
               </div>
               <button type="submit" disabled={loading} className="btn-primary w-full" data-testid="fp-send-otp-btn">{loading ? "Sending..." : "Send OTP"}</button>
             </form>

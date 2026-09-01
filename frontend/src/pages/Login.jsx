@@ -69,7 +69,7 @@ export default function Login() {
               <input
                 type="email"
                 className="input-field"
-                placeholder="you@musicclub.com"
+                placeholder="you@bandish.club"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
