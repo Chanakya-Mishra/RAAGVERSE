@@ -9,6 +9,7 @@ load_dotenv(ROOT_DIR / ".env")
 
 import os
 import io
+import re
 import csv
 import asyncio
 import logging
@@ -23,8 +24,13 @@ from typing import List, Optional, Literal
 from fastapi import FastAPI, APIRouter, HTTPException, Depends, Request, Response, status, UploadFile, File, Form, Header, Query
 from fastapi.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
-from pydantic import BaseModel, Field, EmailStr, ConfigDict
+from pydantic import BaseModel, Field, EmailStr, ConfigDict, model_validator
 import uuid
+
+try:
+    from twilio.rest import Client as TwilioClient
+except Exception:
+    TwilioClient = None
 
 # ---------- Config ----------
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
@@ -43,6 +49,51 @@ db = client[os.environ["DB_NAME"]]
 
 resend.api_key = os.environ.get("RESEND_API_KEY", "")
 SENDER_EMAIL = os.environ.get("SENDER_EMAIL", "onboarding@resend.dev")
+
+# ---------- Twilio SMS ----------
+TWILIO_SID = os.environ.get("TWILIO_ACCOUNT_SID", "")
+TWILIO_TOKEN = os.environ.get("TWILIO_AUTH_TOKEN", "")
+TWILIO_FROM = os.environ.get("TWILIO_FROM_NUMBER", "")
+_twilio_client = None
+if TWILIO_SID and TWILIO_TOKEN and TWILIO_FROM and TwilioClient is not None:
+    try:
+        _twilio_client = TwilioClient(TWILIO_SID, TWILIO_TOKEN)
+    except Exception as _e:
+        logging.getLogger("music_club").error(f"Twilio client init failed: {_e}")
+
+
+def normalize_phone(raw: Optional[str]) -> Optional[str]:
+    if raw is None:
+        return None
+    original = raw.strip()
+    if not original:
+        return None
+    v = re.sub(r"[^\d+]", "", original)
+    if not v:
+        raise HTTPException(status_code=400, detail="Phone must be E.164 (e.g. +14155552671)")
+    if not v.startswith("+"):
+        # If admin entered without +, we assume it already includes country code
+        v = "+" + v.lstrip("+")
+    if not re.match(r"^\+\d{8,15}$", v):
+        raise HTTPException(status_code=400, detail="Phone must be E.164 (e.g. +14155552671)")
+    return v
+
+
+async def send_otp_sms(recipient_phone: str, name: str, otp: str) -> dict:
+    body = f"Bandish · Your password reset code is {otp}. Expires in 10 minutes. Never share this code."
+    if not _twilio_client:
+        logging.getLogger("music_club").warning(f"[DEV] Twilio not configured. SMS OTP for {recipient_phone}: {otp}")
+        return {"ok": False, "error": "twilio_not_configured"}
+    try:
+        msg = await asyncio.to_thread(
+            _twilio_client.messages.create,
+            body=body, from_=TWILIO_FROM, to=recipient_phone,
+        )
+        logging.getLogger("music_club").info(f"SMS OTP sent to {recipient_phone} sid={msg.sid}")
+        return {"ok": True, "error": None}
+    except Exception as e:
+        logging.getLogger("music_club").error(f"Twilio send failed for {recipient_phone}: {e}. OTP={otp}")
+        return {"ok": False, "error": str(e)}
 
 # ---------- Emergent Object Storage ----------
 STORAGE_BASE = (os.environ.get("INTEGRATION_PROXY_URL") or "").strip() or "https://integrations.emergentagent.com"
@@ -176,6 +227,7 @@ def user_public(u: dict) -> dict:
         "name": u.get("name", ""),
         "role": u.get("role", "member"),
         "status": u.get("status", "active"),
+        "phone_number": u.get("phone_number"),
         "instrument": u.get("instrument"),
         "bio": u.get("bio"),
         "created_at": u.get("created_at"),
@@ -256,18 +308,39 @@ class LoginBody(BaseModel):
 
 
 class ForgotBody(BaseModel):
-    email: EmailStr
+    email: Optional[EmailStr] = None
+    phone: Optional[str] = None
+
+    @model_validator(mode="after")
+    def _one_of(self):
+        if not self.email and not self.phone:
+            raise ValueError("Provide email or phone")
+        return self
 
 
 class VerifyOtpBody(BaseModel):
-    email: EmailStr
+    email: Optional[EmailStr] = None
+    phone: Optional[str] = None
     otp: str = Field(min_length=6, max_length=6)
+
+    @model_validator(mode="after")
+    def _one_of(self):
+        if not self.email and not self.phone:
+            raise ValueError("Provide email or phone")
+        return self
 
 
 class ResetPasswordBody(BaseModel):
-    email: EmailStr
+    email: Optional[EmailStr] = None
+    phone: Optional[str] = None
     otp: str = Field(min_length=6, max_length=6)
     new_password: str = Field(min_length=6)
+
+    @model_validator(mode="after")
+    def _one_of(self):
+        if not self.email and not self.phone:
+            raise ValueError("Provide email or phone")
+        return self
 
 
 class ChangePasswordBody(BaseModel):
@@ -275,10 +348,18 @@ class ChangePasswordBody(BaseModel):
     new_password: str = Field(min_length=6)
 
 
+class ProfileUpdateBody(BaseModel):
+    name: Optional[str] = None
+    phone_number: Optional[str] = None
+    instrument: Optional[str] = None
+    bio: Optional[str] = None
+
+
 class MemberCreate(BaseModel):
     email: EmailStr
     name: str
     password: str = Field(min_length=6)
+    phone_number: Optional[str] = None
     instrument: Optional[str] = None
     bio: Optional[str] = None
     status: Literal["active", "pending", "inactive"] = "active"
@@ -286,10 +367,18 @@ class MemberCreate(BaseModel):
 
 class MemberUpdate(BaseModel):
     name: Optional[str] = None
+    phone_number: Optional[str] = None
     instrument: Optional[str] = None
     bio: Optional[str] = None
     status: Optional[Literal["active", "pending", "inactive"]] = None
     password: Optional[str] = None
+
+
+class MemberInviteBody(BaseModel):
+    email: EmailStr
+    name: str
+    phone_number: Optional[str] = None
+    instrument: Optional[str] = None
 
 
 class EventCreate(BaseModel):
@@ -348,20 +437,14 @@ class GalleryUpdate(BaseModel):
     photographer: Optional[str] = None
 
 
-class MemberInviteBody(BaseModel):
-    email: EmailStr
-    name: str
-    instrument: Optional[str] = None
+class GoogleCallbackBody(BaseModel):
+    session_id: str
 
 
 class RSVPBody(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     email: EmailStr
     guests: int = Field(default=1, ge=1, le=10)
-
-
-class GoogleCallbackBody(BaseModel):
-    session_id: str
 
 
 class SponsorCreate(BaseModel):
@@ -481,13 +564,24 @@ async def refresh_token(request: Request, response: Response):
         raise HTTPException(status_code=401, detail="Invalid refresh token")
 
 
+async def _resolve_user_by_identifier(email: Optional[str], phone: Optional[str]) -> tuple[Optional[dict], Optional[str]]:
+    """Look up user by email or phone. Returns (user, canonical_email or None)."""
+    if email:
+        e = email.lower().strip()
+        return await db.users.find_one({"email": e}, {"_id": 0}), e
+    if phone:
+        p = normalize_phone(phone)
+        u = await db.users.find_one({"phone_number": p}, {"_id": 0})
+        return u, (u["email"] if u else None)
+    return None, None
+
+
 @api.post("/auth/forgot-password")
 async def forgot_password(body: ForgotBody):
-    email = body.email.lower().strip()
-    user = await db.users.find_one({"email": email}, {"_id": 0})
+    user, email = await _resolve_user_by_identifier(body.email, body.phone)
     delivered = True
     # Always respond same shape (do not leak enumeration), but only generate OTP if user exists.
-    if user:
+    if user and email:
         otp = f"{secrets.randbelow(1_000_000):06d}"
         otp_hash = hash_password(otp)
         send_result = await send_otp_email(email, user.get("name", ""), otp)
@@ -496,9 +590,9 @@ async def forgot_password(body: ForgotBody):
             {"email": email},
             {"$set": {
                 "email": email,
+                "channel": "email",
                 "otp_hash": otp_hash,
-                # Store plaintext ONLY when Resend delivery failed, so admin can share it manually
-                # (needed while Resend is in sandbox mode without a verified domain).
+                # Store plaintext ONLY when delivery failed, so admin can share it manually.
                 "otp_plain": None if delivered else otp,
                 "delivery_status": "sent" if delivered else "failed",
                 "delivery_error": None if delivered else (send_result.get("error") or "")[:400],
@@ -508,6 +602,7 @@ async def forgot_password(body: ForgotBody):
                 "created_at": now_utc().isoformat(),
                 "user_name": user.get("name", ""),
                 "user_role": user.get("role", "member"),
+                "phone_number": user.get("phone_number"),
             }},
             upsert=True,
         )
@@ -515,9 +610,60 @@ async def forgot_password(body: ForgotBody):
         "success": True,
         "delivered": delivered,
         "message": (
-            "If an account exists for this email, an OTP has been sent."
+            "If an account exists, a reset code has been sent."
             if delivered
-            else "OTP generated but email delivery failed. Please contact an admin to retrieve your code."
+            else "Code generated but email delivery failed. Please contact an admin to retrieve it."
+        ),
+    }
+
+
+@api.post("/auth/forgot-password-sms")
+async def forgot_password_sms(body: ForgotBody):
+    """SMS-based reset. Body must include `phone` (or `email` which we look up the phone for)."""
+    user, email = await _resolve_user_by_identifier(body.email, body.phone)
+    delivered = True
+    phone_for_sms = None
+    if user and email:
+        phone_for_sms = user.get("phone_number")
+        if not phone_for_sms:
+            # No phone on file — return generic response but do NOT expose reason (no enumeration).
+            return {
+                "success": True,
+                "delivered": False,
+                "channel": "sms",
+                "message": "No phone number linked to this account. Ask an admin to add one, or reset via email.",
+            }
+        otp = f"{secrets.randbelow(1_000_000):06d}"
+        otp_hash = hash_password(otp)
+        send_result = await send_otp_sms(phone_for_sms, user.get("name", ""), otp)
+        delivered = bool(send_result.get("ok"))
+        await db.password_reset_otps.update_one(
+            {"email": email},
+            {"$set": {
+                "email": email,
+                "channel": "sms",
+                "otp_hash": otp_hash,
+                "otp_plain": None if delivered else otp,
+                "delivery_status": "sent" if delivered else "failed",
+                "delivery_error": None if delivered else (send_result.get("error") or "")[:400],
+                "expires_at": (now_utc() + timedelta(minutes=OTP_EXPIRY_MINUTES)).isoformat(),
+                "used": False,
+                "attempts": 0,
+                "created_at": now_utc().isoformat(),
+                "user_name": user.get("name", ""),
+                "user_role": user.get("role", "member"),
+                "phone_number": phone_for_sms,
+            }},
+            upsert=True,
+        )
+    return {
+        "success": True,
+        "delivered": delivered,
+        "channel": "sms",
+        "message": (
+            "If this phone is on file, an SMS code has been sent."
+            if delivered
+            else "Code generated but SMS delivery failed. Please contact an admin to retrieve it."
         ),
     }
 
@@ -545,13 +691,18 @@ async def _validate_otp(email: str, otp: str, consume: bool = False) -> dict:
 
 @api.post("/auth/verify-otp")
 async def verify_otp(body: VerifyOtpBody):
-    await _validate_otp(body.email.lower().strip(), body.otp)
+    _, email = await _resolve_user_by_identifier(body.email, body.phone)
+    if not email:
+        raise HTTPException(status_code=400, detail="No matching account for this identifier")
+    await _validate_otp(email, body.otp)
     return {"success": True, "message": "OTP verified"}
 
 
 @api.post("/auth/reset-password")
 async def reset_password(body: ResetPasswordBody):
-    email = body.email.lower().strip()
+    _, email = await _resolve_user_by_identifier(body.email, body.phone)
+    if not email:
+        raise HTTPException(status_code=400, detail="No matching account for this identifier")
     await _validate_otp(email, body.otp, consume=True)
     new_hash = hash_password(body.new_password)
     result = await db.users.update_one({"email": email}, {"$set": {"password_hash": new_hash}})
@@ -568,6 +719,23 @@ async def change_password(body: ChangePasswordBody, user: dict = Depends(get_cur
     return {"success": True}
 
 
+@api.put("/auth/me")
+async def update_me(body: ProfileUpdateBody, user: dict = Depends(get_current_user)):
+    updates = {k: v for k, v in body.model_dump(exclude_none=True).items()}
+    if "phone_number" in updates:
+        phone = normalize_phone(updates["phone_number"]) if updates["phone_number"] else None
+        if phone:
+            clash = await db.users.find_one({"phone_number": phone, "id": {"$ne": user["id"]}})
+            if clash:
+                raise HTTPException(status_code=409, detail="Phone number already in use")
+        updates["phone_number"] = phone
+    if not updates:
+        raise HTTPException(status_code=400, detail="No updates provided")
+    await db.users.update_one({"id": user["id"]}, {"$set": updates})
+    doc = await db.users.find_one({"id": user["id"]}, {"_id": 0})
+    return {"user": user_public(doc)}
+
+
 # ---------- Members ----------
 @api.get("/members")
 async def list_members(admin: dict = Depends(require_admin)):
@@ -580,6 +748,9 @@ async def create_member(body: MemberCreate, admin: dict = Depends(require_admin)
     email = body.email.lower().strip()
     if await db.users.find_one({"email": email}):
         raise HTTPException(status_code=409, detail="Email already registered")
+    phone = normalize_phone(body.phone_number)
+    if phone and await db.users.find_one({"phone_number": phone}):
+        raise HTTPException(status_code=409, detail="Phone number already in use")
     doc = {
         "id": str(uuid.uuid4()),
         "email": email,
@@ -587,6 +758,7 @@ async def create_member(body: MemberCreate, admin: dict = Depends(require_admin)
         "password_hash": hash_password(body.password),
         "role": "member",
         "status": body.status,
+        "phone_number": phone,
         "instrument": body.instrument,
         "bio": body.bio,
         "created_at": now_utc().isoformat(),
@@ -600,6 +772,13 @@ async def update_member(member_id: str, body: MemberUpdate, admin: dict = Depend
     updates = {k: v for k, v in body.model_dump(exclude_none=True).items()}
     if "password" in updates:
         updates["password_hash"] = hash_password(updates.pop("password"))
+    if "phone_number" in updates:
+        phone = normalize_phone(updates["phone_number"]) if updates["phone_number"] else None
+        if phone:
+            clash = await db.users.find_one({"phone_number": phone, "id": {"$ne": member_id}})
+            if clash:
+                raise HTTPException(status_code=409, detail="Phone number already in use")
+        updates["phone_number"] = phone
     if not updates:
         raise HTTPException(status_code=400, detail="No updates provided")
     result = await db.users.update_one({"id": member_id}, {"$set": updates})
@@ -815,6 +994,9 @@ async def invite_member(body: MemberInviteBody, admin: dict = Depends(require_ad
     email = body.email.lower().strip()
     if await db.users.find_one({"email": email}):
         raise HTTPException(status_code=409, detail="Email already registered")
+    phone = normalize_phone(body.phone_number)
+    if phone and await db.users.find_one({"phone_number": phone}):
+        raise HTTPException(status_code=409, detail="Phone number already in use")
     temp_password = secrets.token_urlsafe(9)
     doc = {
         "id": str(uuid.uuid4()),
@@ -823,6 +1005,7 @@ async def invite_member(body: MemberInviteBody, admin: dict = Depends(require_ad
         "password_hash": hash_password(temp_password),
         "role": "member",
         "status": "active",
+        "phone_number": phone,
         "instrument": body.instrument,
         "bio": None,
         "invited_by": admin["id"],
@@ -1240,6 +1423,7 @@ app.include_router(api)
 async def on_startup():
     await db.users.create_index("email", unique=True)
     await db.users.create_index("id", unique=True)
+    await db.users.create_index("phone_number", unique=True, partialFilterExpression={"phone_number": {"$type": "string"}})
     await db.password_reset_otps.create_index("email", unique=True)
     await db.login_attempts.create_index("identifier")
     for coll in ("events", "sessions", "gallery"):

@@ -237,19 +237,19 @@ export function Members() {
   const [bulkOpen, setBulkOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState({ email: "", name: "", password: "", instrument: "", bio: "", status: "active" });
-  const [invite, setInvite] = useState({ email: "", name: "", instrument: "" });
+  const [invite, setInvite] = useState({ email: "", name: "", phone_number: "", instrument: "" });
   const [csvFile, setCsvFile] = useState(null);
   const [sendInvite, setSendInvite] = useState(true);
   const [busy, setBusy] = useState(false);
 
-  const openNew = () => { setEditing(null); setForm({ email: "", name: "", password: "", instrument: "", bio: "", status: "active" }); setOpen(true); };
-  const openEdit = (m) => { setEditing(m); setForm({ email: m.email, name: m.name, password: "", instrument: m.instrument || "", bio: m.bio || "", status: m.status || "active" }); setOpen(true); };
+  const openNew = () => { setEditing(null); setForm({ email: "", name: "", password: "", phone_number: "", instrument: "", bio: "", status: "active" }); setOpen(true); };
+  const openEdit = (m) => { setEditing(m); setForm({ email: m.email, name: m.name, password: "", phone_number: m.phone_number || "", instrument: m.instrument || "", bio: m.bio || "", status: m.status || "active" }); setOpen(true); };
 
   const save = async (e) => {
     e.preventDefault();
     try {
       if (editing) {
-        const body = { name: form.name, instrument: form.instrument, bio: form.bio, status: form.status };
+        const body = { name: form.name, phone_number: form.phone_number || null, instrument: form.instrument, bio: form.bio, status: form.status };
         if (form.password) body.password = form.password;
         await api.put(`/members/${editing.id}`, body);
         toast.success("Member updated");
@@ -340,6 +340,7 @@ export function Members() {
             <input className="input-field" placeholder={editing ? "New password (leave blank to keep)" : "Password (min 6)"} type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} required={!editing} data-testid="member-password-input" />
             <input className="input-field" placeholder="Instrument (Guitar, Vocals...)" value={form.instrument} onChange={(e) => setForm({ ...form, instrument: e.target.value })} data-testid="member-instrument-input" />
           </div>
+          <input className="input-field" placeholder="Phone (E.164, e.g. +14155552671) — optional" value={form.phone_number || ""} onChange={(e) => setForm({ ...form, phone_number: e.target.value })} data-testid="member-phone-input" />
           <textarea className="input-field" rows={3} placeholder="Short bio (optional)" value={form.bio} onChange={(e) => setForm({ ...form, bio: e.target.value })} data-testid="member-bio-input" />
           <select className="input-field" value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })} data-testid="member-status-select">
             <option value="active">Active</option><option value="pending">Pending</option><option value="inactive">Inactive</option>
@@ -353,6 +354,7 @@ export function Members() {
           <p className="text-sm text-slate-400">We'll create the account with a random temporary password and email it to them via Resend.</p>
           <input className="input-field" placeholder="Full name" value={invite.name} onChange={(e) => setInvite({ ...invite, name: e.target.value })} required data-testid="invite-name-input" />
           <input className="input-field" placeholder="Email" type="email" value={invite.email} onChange={(e) => setInvite({ ...invite, email: e.target.value })} required data-testid="invite-email-input" />
+          <input className="input-field" placeholder="Phone (E.164, optional — enables SMS reset)" value={invite.phone_number || ""} onChange={(e) => setInvite({ ...invite, phone_number: e.target.value })} data-testid="invite-phone-input" />
           <input className="input-field" placeholder="Instrument (optional)" value={invite.instrument} onChange={(e) => setInvite({ ...invite, instrument: e.target.value })} data-testid="invite-instrument-input" />
           <button type="submit" disabled={busy} className="btn-primary w-full flex items-center justify-center gap-2" data-testid="invite-send-btn"><Send size={16} /> {busy ? "Sending..." : "Send Invite"}</button>
         </form>
