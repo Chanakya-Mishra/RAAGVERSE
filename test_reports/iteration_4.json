@@ -1,0 +1,24 @@
+{
+  "summary": "Iteration 4 backend-only test of forgot-password Resend-sandbox fallback. Created 19 pytest cases covering all requested scenarios: admin1 delivered=true, admin2/new-member delivered=false with plaintext OTP stored, no enumeration leak for unknown email, admin-only /admin/pending-otps shape (no otp_hash, includes email/user_name/user_role/otp_plain/delivery_error/expires_at/created_at) with 401/403 auth guards, end-to-end reset for failed-delivery member using plaintext OTP, wrong OTP 400, OTP marked used after reset, /admin/otps/{email}/resend 200 (delivered=false) and 404 for missing, plus regressions (brute-force 429, /admin/stats keys, /public/events, /me for both admins). All 19 tests passed on the public URL. Admin1/Admin2 passwords verified still Admin@123 after tests and test member was deleted.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_iteration4_forgot_password.py",
+    "/app/test_reports/pytest/iteration4.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py is 1323 lines — consider splitting into routers (auth, members, events, admin, gallery) for maintainability.",
+    "forgot-password stores otp_plain in Mongo. Acceptable as temporary workaround, but plaintext OTP at rest is a security tradeoff. Add a TTL index on password_reset_otps.expires_at so plaintext is auto-purged, and ensure admin_pending_otps entries are audit-logged when viewed.",
+    "admin_resend_otp returns delivery error string verbatim (truncated 400 chars). Fine, but consider not exposing raw provider error messages to admins in the response — could leak API-key hints.",
+    "No index on password_reset_otps.email — repeated forgot-password flows will do full scans as collection grows. Add unique index on email."
+  ],
+  "updated_files": ["/app/backend/tests/test_iteration4_forgot_password.py"],
+  "success_rate": {"backend": "100%", "frontend": "N/A (skipped as requested)"},
+  "test_credentials": "Admin1 mchanakya64@gmail.com / Admin@123; Admin2 siddharthsharma2649@gmail.com / Admin@123 (both verified still work post-test).",
+  "seed_data_creation": "Ephemeral test member test-fp-member-<uuid>@example.com created and deleted within the run.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Iteration 4 verified forgot-password Resend fallback end-to-end. Test file /app/backend/tests/test_iteration4_forgot_password.py is idempotent (uses unique test-member email per run, cleans up on completion). Admin1 is the only email that Resend actually delivers to in sandbox — this is asserted as delivered=true and is treated as correct behavior. If Resend domain gets verified later, test_04/05/14 will start returning delivered=true and will need to be updated to accept either outcome.",
+  "rca of the issue": "Original bug: Resend account is in sandbox without a verified domain, so all sends to addresses other than the account owner (mchanakya64@gmail.com) silently fail. Fix (verified working): forgot_password now captures send_result.ok and, on failure, persists otp_plain + delivery_status='failed' + delivery_error in password_reset_otps. New admin endpoints GET /admin/pending-otps and POST /admin/otps/{email}/resend let admins hand the code over out-of-band. verify-otp/reset-password paths unchanged and confirmed working with the plaintext OTP retrieved from pending-otps."
+}

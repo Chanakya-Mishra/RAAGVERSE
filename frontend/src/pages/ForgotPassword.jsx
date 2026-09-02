@@ -19,8 +19,12 @@ export default function ForgotPassword() {
     e.preventDefault();
     setLoading(true);
     try {
-      await api.post("/auth/forgot-password", { email });
-      toast.success("If the account exists, an OTP has been emailed to you.");
+      const { data } = await api.post("/auth/forgot-password", { email });
+      if (data.delivered === false) {
+        toast.warning("OTP generated but email delivery failed. Ask an admin (Chanakya or Siddharth) to share your code.", { duration: 8000 });
+      } else {
+        toast.success("If the account exists, an OTP has been emailed to you.");
+      }
       setStep(2);
     } catch (err) {
       toast.error(formatApiError(err.response?.data?.detail) || err.message);

@@ -3,7 +3,7 @@ import { NavLink, Navigate, useNavigate } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import { api, formatApiError } from "@/lib/api";
 import { Logo, WaveBars } from "@/components/Brand";
-import { LayoutDashboard, Users, Calendar, Mic2, Image as ImageIcon, UserCog, LogOut, Plus, Trash2, Edit3, X, Check, Send, UploadCloud, Ticket, ClipboardList, Sparkles, BellRing, Handshake } from "lucide-react";
+import { LayoutDashboard, Users, Calendar, Mic2, Image as ImageIcon, UserCog, LogOut, Plus, Trash2, Edit3, X, Check, Send, UploadCloud, Ticket, ClipboardList, Sparkles, BellRing, Handshake, KeyRound, RefreshCw, Copy } from "lucide-react";
 import { toast } from "sonner";
 
 function Shell({ children }) {
@@ -133,7 +133,68 @@ export function Overview() {
           <div className="text-sm text-slate-400 leading-relaxed">Active sponsors appear on the landing page. Add them from the Sponsors tab — pick a tier, drop a logo, and set the display order.</div>
         </div>
       </div>
+
+      <PendingOtpsPanel />
     </Shell>
+  );
+}
+
+function PendingOtpsPanel() {
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const load = async () => {
+    setLoading(true);
+    try { const { data } = await api.get("/admin/pending-otps"); setItems(data.pending || []); }
+    catch (e) { toast.error(formatApiError(e.response?.data?.detail)); }
+    finally { setLoading(false); }
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const copy = async (otp) => {
+    try { await navigator.clipboard.writeText(otp); toast.success("OTP copied"); }
+    catch { toast.error("Copy failed"); }
+  };
+
+  const resend = async (email) => {
+    try { const { data } = await api.post(`/admin/otps/${encodeURIComponent(email)}/resend`);
+      if (data.delivered) toast.success(`Resent to ${email}`);
+      else toast.warning(`Resend still failed: ${data.error?.slice(0, 100) || "unknown"}`, { duration: 6000 });
+      load();
+    } catch (e) { toast.error(formatApiError(e.response?.data?.detail)); }
+  };
+
+  return (
+    <div className="card p-6 mt-6" data-testid="pending-otps-panel">
+      <div className="flex items-start justify-between mb-4 flex-wrap gap-2">
+        <div>
+          <div className="font-display text-xl font-bold flex items-center gap-2"><KeyRound size={18} className="text-amber-400" /> Password Reset Requests</div>
+          <div className="text-sm text-slate-400 mt-1 leading-relaxed max-w-2xl">If a member's OTP email failed to send (Resend hasn't been given a verified domain yet), their code appears here so you can share it directly. Retry delivery any time.</div>
+        </div>
+        <button onClick={load} className="btn-ghost text-xs flex items-center gap-2" data-testid="refresh-otps-btn"><RefreshCw size={12} /> Refresh</button>
+      </div>
+      {loading && <div className="text-slate-500 italic text-sm">Loading…</div>}
+      {!loading && items.length === 0 && <div className="text-slate-500 italic text-sm">No pending requests. Everything's delivered.</div>}
+      <div className="space-y-2" data-testid="pending-otps-list">
+        {items.map((r) => (
+          <div key={r.email} className="border border-white/10 bg-black/20 rounded-lg p-4 flex items-center justify-between gap-3 flex-wrap" data-testid={`pending-otp-${r.email}`}>
+            <div className="min-w-0">
+              <div className="font-semibold text-sm truncate">{r.user_name || "—"} <span className="text-slate-500 font-mono">· {r.email}</span></div>
+              <div className="text-[11px] text-slate-500 mt-0.5">
+                {r.user_role} · expires {new Date(r.expires_at).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}
+                {r.delivery_error && <span className="text-red-400"> · {r.delivery_error.slice(0, 80)}</span>}
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <code className="font-mono text-lg font-bold tracking-widest text-orange-400 bg-black/40 border border-orange-500/30 rounded-md px-3 py-1.5" data-testid={`otp-code-${r.email}`}>{r.otp_plain}</code>
+              <button onClick={() => copy(r.otp_plain)} className="btn-ghost text-xs flex items-center gap-1" title="Copy OTP" data-testid={`copy-otp-${r.email}`}><Copy size={12} /> Copy</button>
+              <button onClick={() => resend(r.email)} className="btn-ghost text-xs flex items-center gap-1" title="Retry email" data-testid={`resend-otp-${r.email}`}><Send size={12} /> Retry</button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 

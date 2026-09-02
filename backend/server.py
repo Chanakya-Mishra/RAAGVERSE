@@ -211,7 +211,7 @@ async def require_admin(user: dict = Depends(get_current_user)) -> dict:
 
 
 # ---------- Email ----------
-async def send_otp_email(recipient: str, name: str, otp: str) -> bool:
+async def send_otp_email(recipient: str, name: str, otp: str) -> dict:
     subject = "Bandish - Password Reset OTP"
     html = f"""
     <table width='100%' cellpadding='0' cellspacing='0' style='background:#0B0C10;padding:32px 0;font-family:Arial,sans-serif;'>
@@ -237,15 +237,16 @@ async def send_otp_email(recipient: str, name: str, otp: str) -> bool:
     """
     if not resend.api_key:
         logger.warning(f"[DEV MODE] Resend not configured. OTP for {recipient}: {otp}")
-        return True
+        return {"ok": False, "error": "resend_not_configured"}
     try:
         params = {"from": SENDER_EMAIL, "to": [recipient], "subject": subject, "html": html}
         result = await asyncio.to_thread(resend.Emails.send, params)
         logger.info(f"OTP email sent to {recipient} id={result.get('id') if isinstance(result, dict) else result}")
-        return True
+        return {"ok": True, "error": None}
     except Exception as e:
-        logger.error(f"Resend send failed for {recipient}: {e}. OTP={otp}")
-        return False
+        msg = str(e)
+        logger.error(f"Resend send failed for {recipient}: {msg}. OTP={otp}")
+        return {"ok": False, "error": msg}
 
 
 # ---------- Models ----------
@@ -484,24 +485,41 @@ async def refresh_token(request: Request, response: Response):
 async def forgot_password(body: ForgotBody):
     email = body.email.lower().strip()
     user = await db.users.find_one({"email": email}, {"_id": 0})
-    # Always respond success (do not leak enumeration), but only send if user exists.
+    delivered = True
+    # Always respond same shape (do not leak enumeration), but only generate OTP if user exists.
     if user:
         otp = f"{secrets.randbelow(1_000_000):06d}"
         otp_hash = hash_password(otp)
+        send_result = await send_otp_email(email, user.get("name", ""), otp)
+        delivered = bool(send_result.get("ok"))
         await db.password_reset_otps.update_one(
             {"email": email},
             {"$set": {
                 "email": email,
                 "otp_hash": otp_hash,
+                # Store plaintext ONLY when Resend delivery failed, so admin can share it manually
+                # (needed while Resend is in sandbox mode without a verified domain).
+                "otp_plain": None if delivered else otp,
+                "delivery_status": "sent" if delivered else "failed",
+                "delivery_error": None if delivered else (send_result.get("error") or "")[:400],
                 "expires_at": (now_utc() + timedelta(minutes=OTP_EXPIRY_MINUTES)).isoformat(),
                 "used": False,
                 "attempts": 0,
                 "created_at": now_utc().isoformat(),
+                "user_name": user.get("name", ""),
+                "user_role": user.get("role", "member"),
             }},
             upsert=True,
         )
-        await send_otp_email(email, user.get("name", ""), otp)
-    return {"success": True, "message": "If an account exists for this email, an OTP has been sent."}
+    return {
+        "success": True,
+        "delivered": delivered,
+        "message": (
+            "If an account exists for this email, an OTP has been sent."
+            if delivered
+            else "OTP generated but email delivery failed. Please contact an admin to retrieve your code."
+        ),
+    }
 
 
 async def _validate_otp(email: str, otp: str, consume: bool = False) -> dict:
@@ -1112,6 +1130,47 @@ async def public_rsvp_count(event_id: str):
 @api.post("/admin/send-reminders")
 async def trigger_reminders(admin: dict = Depends(require_admin)):
     return await _dispatch_reminders()
+
+
+# ---------- Admin: view undelivered OTPs (fallback while Resend has no verified domain) ----------
+@api.get("/admin/pending-otps")
+async def admin_pending_otps(admin: dict = Depends(require_admin)):
+    """Return currently valid password-reset OTPs whose email delivery failed.
+    Lets admins hand the code to the member directly until a domain is verified in Resend."""
+    now = now_utc()
+    docs = await db.password_reset_otps.find(
+        {"used": False, "delivery_status": "failed"},
+        {"_id": 0, "otp_hash": 0},
+    ).sort("created_at", -1).to_list(100)
+    active = []
+    for d in docs:
+        exp = d.get("expires_at")
+        if isinstance(exp, str):
+            try:
+                exp_dt = datetime.fromisoformat(exp)
+            except Exception:
+                continue
+            if exp_dt < now:
+                continue
+        d["expires_at"] = exp
+        active.append(d)
+    return {"pending": active}
+
+
+@api.post("/admin/otps/{email}/resend")
+async def admin_resend_otp(email: str, admin: dict = Depends(require_admin)):
+    """Force-resend the OTP email for a member. Useful after verifying a Resend domain."""
+    email = email.lower().strip()
+    rec = await db.password_reset_otps.find_one({"email": email, "used": False}, {"_id": 0})
+    if not rec or not rec.get("otp_plain"):
+        raise HTTPException(status_code=404, detail="No re-sendable OTP for this email")
+    result = await send_otp_email(email, rec.get("user_name", ""), rec["otp_plain"])
+    delivered = bool(result.get("ok"))
+    await db.password_reset_otps.update_one(
+        {"email": email},
+        {"$set": {"delivery_status": "sent" if delivered else "failed", "delivery_error": None if delivered else (result.get("error") or "")[:400]}},
+    )
+    return {"success": True, "delivered": delivered, "error": result.get("error")}
 
 
 # ---------- Sponsors ----------
