@@ -3,14 +3,17 @@ import { Navigate, useNavigate } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import { api, formatApiError } from "@/lib/api";
 import { Logo, WaveBars } from "@/components/Brand";
-import { LogOut, Calendar, MapPin, CheckCircle2, XCircle, Ticket } from "lucide-react";
+import { LogOut, Calendar, MapPin, CheckCircle2, XCircle, Ticket, UserCog, X, Save } from "lucide-react";
 import { toast } from "sonner";
 
 export default function MemberDashboard() {
-  const { user, logout } = useAuth();
+  const { user, logout, refresh } = useAuth();
   const nav = useNavigate();
   const [events, setEvents] = useState([]);
   const [myRsvps, setMyRsvps] = useState([]);
+  const [profileOpen, setProfileOpen] = useState(false);
+  const [pForm, setPForm] = useState({ name: "", phone_number: "", instrument: "", bio: "" });
+  const [savingProfile, setSavingProfile] = useState(false);
 
   const load = async () => {
     try {
@@ -24,6 +27,9 @@ export default function MemberDashboard() {
   };
 
   useEffect(() => { if (user && user.role === "member") load(); }, [user]);
+  useEffect(() => {
+    if (user) setPForm({ name: user.name || "", phone_number: user.phone_number || "", instrument: user.instrument || "", bio: user.bio || "" });
+  }, [user]);
 
   if (user === null) return <div className="min-h-screen bg-mesh flex items-center justify-center text-slate-400">Loading…</div>;
   if (!user) return <Navigate to="/login" replace />;
@@ -61,6 +67,7 @@ export default function MemberDashboard() {
                 <div className="text-[10px] uppercase tracking-widest text-violet-300 font-mono">Member</div>
               </div>
             </div>
+            <button onClick={() => setProfileOpen(true)} className="btn-ghost text-sm flex items-center gap-2" data-testid="edit-profile-btn"><UserCog size={14} /> Profile</button>
             <button onClick={async () => { await logout(); nav("/login"); }} className="btn-ghost text-sm flex items-center gap-2" data-testid="member-logout-btn"><LogOut size={14} /> Sign Out</button>
           </div>
         </div>
@@ -130,6 +137,37 @@ export default function MemberDashboard() {
           </aside>
         </div>
       </main>
+
+      {profileOpen && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur flex items-center justify-center p-4" onClick={() => setProfileOpen(false)}>
+          <div className="card p-6 w-full max-w-md relative" onClick={(e) => e.stopPropagation()} data-testid="member-profile-modal">
+            <button onClick={() => setProfileOpen(false)} className="absolute top-4 right-4 text-slate-400 hover:text-white" data-testid="profile-close-btn"><X size={18} /></button>
+            <div className="font-display text-2xl font-bold mb-1">Your Profile</div>
+            <div className="text-sm text-slate-400 mb-5">Add a phone number to enable SMS-based password reset.</div>
+            <form
+              className="space-y-3"
+              onSubmit={async (ev) => {
+                ev.preventDefault();
+                setSavingProfile(true);
+                try {
+                  await api.put("/auth/me", { name: pForm.name, phone_number: pForm.phone_number || null, instrument: pForm.instrument || null, bio: pForm.bio || null });
+                  await refresh();
+                  toast.success("Profile updated");
+                  setProfileOpen(false);
+                } catch (er) { toast.error(formatApiError(er.response?.data?.detail)); }
+                finally { setSavingProfile(false); }
+              }}
+              data-testid="member-profile-form"
+            >
+              <input className="input-field" placeholder="Full name" value={pForm.name} onChange={(e) => setPForm({ ...pForm, name: e.target.value })} required data-testid="profile-name-input" />
+              <input className="input-field" type="tel" placeholder="Phone (E.164, e.g. +14155552671)" value={pForm.phone_number} onChange={(e) => setPForm({ ...pForm, phone_number: e.target.value })} data-testid="profile-phone-input" />
+              <input className="input-field" placeholder="Instrument" value={pForm.instrument} onChange={(e) => setPForm({ ...pForm, instrument: e.target.value })} data-testid="profile-instrument-input" />
+              <textarea className="input-field" rows={3} placeholder="Bio (optional)" value={pForm.bio} onChange={(e) => setPForm({ ...pForm, bio: e.target.value })} data-testid="profile-bio-input" />
+              <button type="submit" disabled={savingProfile} className="btn-primary w-full flex items-center justify-center gap-2" data-testid="profile-save-btn"><Save size={16} /> {savingProfile ? "Saving..." : "Save Profile"}</button>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

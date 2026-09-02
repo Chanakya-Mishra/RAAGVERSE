@@ -3,7 +3,7 @@ import { NavLink, Navigate, useNavigate } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import { api, formatApiError } from "@/lib/api";
 import { Logo, WaveBars } from "@/components/Brand";
-import { LayoutDashboard, Users, Calendar, Mic2, Image as ImageIcon, UserCog, LogOut, Plus, Trash2, Edit3, X, Check, Send, UploadCloud, Ticket, ClipboardList, Sparkles, BellRing, Handshake } from "lucide-react";
+import { LayoutDashboard, Users, Calendar, Mic2, Image as ImageIcon, UserCog, LogOut, Plus, Trash2, Edit3, X, Check, Send, UploadCloud, Ticket, ClipboardList, Sparkles, BellRing, Handshake, KeyRound, RefreshCw, Copy } from "lucide-react";
 import { toast } from "sonner";
 
 function Shell({ children }) {
@@ -133,7 +133,68 @@ export function Overview() {
           <div className="text-sm text-slate-400 leading-relaxed">Active sponsors appear on the landing page. Add them from the Sponsors tab — pick a tier, drop a logo, and set the display order.</div>
         </div>
       </div>
+
+      <PendingOtpsPanel />
     </Shell>
+  );
+}
+
+function PendingOtpsPanel() {
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const load = async () => {
+    setLoading(true);
+    try { const { data } = await api.get("/admin/pending-otps"); setItems(data.pending || []); }
+    catch (e) { toast.error(formatApiError(e.response?.data?.detail)); }
+    finally { setLoading(false); }
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const copy = async (otp) => {
+    try { await navigator.clipboard.writeText(otp); toast.success("OTP copied"); }
+    catch { toast.error("Copy failed"); }
+  };
+
+  const resend = async (email) => {
+    try { const { data } = await api.post(`/admin/otps/${encodeURIComponent(email)}/resend`);
+      if (data.delivered) toast.success(`Resent to ${email}`);
+      else toast.warning(`Resend still failed: ${data.error?.slice(0, 100) || "unknown"}`, { duration: 6000 });
+      load();
+    } catch (e) { toast.error(formatApiError(e.response?.data?.detail)); }
+  };
+
+  return (
+    <div className="card p-6 mt-6" data-testid="pending-otps-panel">
+      <div className="flex items-start justify-between mb-4 flex-wrap gap-2">
+        <div>
+          <div className="font-display text-xl font-bold flex items-center gap-2"><KeyRound size={18} className="text-amber-400" /> Password Reset Requests</div>
+          <div className="text-sm text-slate-400 mt-1 leading-relaxed max-w-2xl">If a member's OTP email failed to send (Resend hasn't been given a verified domain yet), their code appears here so you can share it directly. Retry delivery any time.</div>
+        </div>
+        <button onClick={load} className="btn-ghost text-xs flex items-center gap-2" data-testid="refresh-otps-btn"><RefreshCw size={12} /> Refresh</button>
+      </div>
+      {loading && <div className="text-slate-500 italic text-sm">Loading…</div>}
+      {!loading && items.length === 0 && <div className="text-slate-500 italic text-sm">No pending requests. Everything's delivered.</div>}
+      <div className="space-y-2" data-testid="pending-otps-list">
+        {items.map((r) => (
+          <div key={r.email} className="border border-white/10 bg-black/20 rounded-lg p-4 flex items-center justify-between gap-3 flex-wrap" data-testid={`pending-otp-${r.email}`}>
+            <div className="min-w-0">
+              <div className="font-semibold text-sm truncate">{r.user_name || "—"} <span className="text-slate-500 font-mono">· {r.email}</span></div>
+              <div className="text-[11px] text-slate-500 mt-0.5">
+                {r.user_role} · expires {new Date(r.expires_at).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}
+                {r.delivery_error && <span className="text-red-400"> · {r.delivery_error.slice(0, 80)}</span>}
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <code className="font-mono text-lg font-bold tracking-widest text-orange-400 bg-black/40 border border-orange-500/30 rounded-md px-3 py-1.5" data-testid={`otp-code-${r.email}`}>{r.otp_plain}</code>
+              <button onClick={() => copy(r.otp_plain)} className="btn-ghost text-xs flex items-center gap-1" title="Copy OTP" data-testid={`copy-otp-${r.email}`}><Copy size={12} /> Copy</button>
+              <button onClick={() => resend(r.email)} className="btn-ghost text-xs flex items-center gap-1" title="Retry email" data-testid={`resend-otp-${r.email}`}><Send size={12} /> Retry</button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -176,19 +237,19 @@ export function Members() {
   const [bulkOpen, setBulkOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState({ email: "", name: "", password: "", instrument: "", bio: "", status: "active" });
-  const [invite, setInvite] = useState({ email: "", name: "", instrument: "" });
+  const [invite, setInvite] = useState({ email: "", name: "", phone_number: "", instrument: "" });
   const [csvFile, setCsvFile] = useState(null);
   const [sendInvite, setSendInvite] = useState(true);
   const [busy, setBusy] = useState(false);
 
-  const openNew = () => { setEditing(null); setForm({ email: "", name: "", password: "", instrument: "", bio: "", status: "active" }); setOpen(true); };
-  const openEdit = (m) => { setEditing(m); setForm({ email: m.email, name: m.name, password: "", instrument: m.instrument || "", bio: m.bio || "", status: m.status || "active" }); setOpen(true); };
+  const openNew = () => { setEditing(null); setForm({ email: "", name: "", password: "", phone_number: "", instrument: "", bio: "", status: "active" }); setOpen(true); };
+  const openEdit = (m) => { setEditing(m); setForm({ email: m.email, name: m.name, password: "", phone_number: m.phone_number || "", instrument: m.instrument || "", bio: m.bio || "", status: m.status || "active" }); setOpen(true); };
 
   const save = async (e) => {
     e.preventDefault();
     try {
       if (editing) {
-        const body = { name: form.name, instrument: form.instrument, bio: form.bio, status: form.status };
+        const body = { name: form.name, phone_number: form.phone_number || null, instrument: form.instrument, bio: form.bio, status: form.status };
         if (form.password) body.password = form.password;
         await api.put(`/members/${editing.id}`, body);
         toast.success("Member updated");
@@ -279,6 +340,7 @@ export function Members() {
             <input className="input-field" placeholder={editing ? "New password (leave blank to keep)" : "Password (min 6)"} type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} required={!editing} data-testid="member-password-input" />
             <input className="input-field" placeholder="Instrument (Guitar, Vocals...)" value={form.instrument} onChange={(e) => setForm({ ...form, instrument: e.target.value })} data-testid="member-instrument-input" />
           </div>
+          <input className="input-field" placeholder="Phone (E.164, e.g. +14155552671) — optional" value={form.phone_number || ""} onChange={(e) => setForm({ ...form, phone_number: e.target.value })} data-testid="member-phone-input" />
           <textarea className="input-field" rows={3} placeholder="Short bio (optional)" value={form.bio} onChange={(e) => setForm({ ...form, bio: e.target.value })} data-testid="member-bio-input" />
           <select className="input-field" value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })} data-testid="member-status-select">
             <option value="active">Active</option><option value="pending">Pending</option><option value="inactive">Inactive</option>
@@ -292,6 +354,7 @@ export function Members() {
           <p className="text-sm text-slate-400">We'll create the account with a random temporary password and email it to them via Resend.</p>
           <input className="input-field" placeholder="Full name" value={invite.name} onChange={(e) => setInvite({ ...invite, name: e.target.value })} required data-testid="invite-name-input" />
           <input className="input-field" placeholder="Email" type="email" value={invite.email} onChange={(e) => setInvite({ ...invite, email: e.target.value })} required data-testid="invite-email-input" />
+          <input className="input-field" placeholder="Phone (E.164, optional — enables SMS reset)" value={invite.phone_number || ""} onChange={(e) => setInvite({ ...invite, phone_number: e.target.value })} data-testid="invite-phone-input" />
           <input className="input-field" placeholder="Instrument (optional)" value={invite.instrument} onChange={(e) => setInvite({ ...invite, instrument: e.target.value })} data-testid="invite-instrument-input" />
           <button type="submit" disabled={busy} className="btn-primary w-full flex items-center justify-center gap-2" data-testid="invite-send-btn"><Send size={16} /> {busy ? "Sending..." : "Send Invite"}</button>
         </form>

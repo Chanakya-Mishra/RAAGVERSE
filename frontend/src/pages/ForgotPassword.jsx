@@ -2,49 +2,52 @@ import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { api, formatApiError } from "@/lib/api";
 import { Logo } from "@/components/Brand";
-import { ArrowLeft, Mail, KeyRound, ShieldCheck } from "lucide-react";
+import { ArrowLeft, Mail, KeyRound, ShieldCheck, MessageSquare } from "lucide-react";
 import { toast } from "sonner";
 import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp";
 
 export default function ForgotPassword() {
   const nav = useNavigate();
+  const [channel, setChannel] = useState("email"); // 'email' | 'sms'
   const [step, setStep] = useState(1);
   const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
   const [otp, setOtp] = useState("");
   const [newPass, setNewPass] = useState("");
   const [confirmPass, setConfirmPass] = useState("");
   const [loading, setLoading] = useState(false);
 
+  const identifierBody = () => (channel === "sms" ? { phone } : { email });
+  const readableIdentifier = channel === "sms" ? phone : email;
+
   const requestOtp = async (e) => {
     e.preventDefault();
     setLoading(true);
     try {
-      await api.post("/auth/forgot-password", { email });
-      toast.success("If the account exists, an OTP has been emailed to you.");
+      const path = channel === "sms" ? "/auth/forgot-password-sms" : "/auth/forgot-password";
+      const { data } = await api.post(path, identifierBody());
+      if (data.delivered === false) {
+        toast.warning("Code generated but delivery failed. Ask an admin (Chanakya or Siddharth) for your code.", { duration: 8000 });
+      } else {
+        toast.success(channel === "sms" ? "SMS sent — check your phone." : "If the account exists, a code was emailed.");
+      }
       setStep(2);
     } catch (err) {
       toast.error(formatApiError(err.response?.data?.detail) || err.message);
-    } finally {
-      setLoading(false);
-    }
+    } finally { setLoading(false); }
   };
 
   const verifyOtp = async (e) => {
     e.preventDefault();
-    if (otp.length !== 6) {
-      toast.error("Enter the 6-digit OTP");
-      return;
-    }
+    if (otp.length !== 6) return toast.error("Enter the 6-digit code");
     setLoading(true);
     try {
-      await api.post("/auth/verify-otp", { email, otp });
-      toast.success("OTP verified. Choose a new password.");
+      await api.post("/auth/verify-otp", { ...identifierBody(), otp });
+      toast.success("Code verified. Set a new password.");
       setStep(3);
     } catch (err) {
       toast.error(formatApiError(err.response?.data?.detail) || err.message);
-    } finally {
-      setLoading(false);
-    }
+    } finally { setLoading(false); }
   };
 
   const resetPass = async (e) => {
@@ -53,19 +56,17 @@ export default function ForgotPassword() {
     if (newPass !== confirmPass) return toast.error("Passwords do not match");
     setLoading(true);
     try {
-      await api.post("/auth/reset-password", { email, otp, new_password: newPass });
+      await api.post("/auth/reset-password", { ...identifierBody(), otp, new_password: newPass });
       toast.success("Password updated. Please sign in.");
       nav("/login");
     } catch (err) {
       toast.error(formatApiError(err.response?.data?.detail) || err.message);
-    } finally {
-      setLoading(false);
-    }
+    } finally { setLoading(false); }
   };
 
   const steps = [
-    { n: 1, t: "Email", Icon: Mail },
-    { n: 2, t: "Verify OTP", Icon: KeyRound },
+    { n: 1, t: channel === "sms" ? "Phone" : "Email", Icon: channel === "sms" ? MessageSquare : Mail },
+    { n: 2, t: "Verify Code", Icon: KeyRound },
     { n: 3, t: "New Password", Icon: ShieldCheck },
   ];
 
@@ -77,7 +78,7 @@ export default function ForgotPassword() {
         </Link>
         <div className="mb-8"><Logo /></div>
 
-        <div className="flex items-center gap-3 mb-10">
+        <div className="flex items-center gap-3 mb-6">
           {steps.map((s, i) => (
             <div key={s.n} className="flex items-center gap-3 flex-1">
               <div className={`w-9 h-9 rounded-full flex items-center justify-center border-2 transition-all ${step >= s.n ? "border-orange-500 bg-orange-500/20 text-orange-400" : "border-white/10 text-slate-500"}`}>
@@ -94,21 +95,51 @@ export default function ForgotPassword() {
 
         <div className="card p-8">
           {step === 1 && (
-            <form onSubmit={requestOtp} className="space-y-5" data-testid="fp-step-1">
-              <h1 className="font-display text-3xl font-black">Reset your password</h1>
-              <p className="text-slate-400 text-sm">Enter your registered email — we'll send a 6-digit OTP.</p>
-              <div>
-                <label className="text-xs font-mono uppercase tracking-widest text-slate-400 mb-2 block">Email</label>
-                <input type="email" className="input-field" placeholder="you@musicclub.com" value={email} onChange={(e) => setEmail(e.target.value)} required data-testid="fp-email-input" />
+            <>
+              <div className="flex gap-2 mb-6 border border-white/10 rounded-full p-1 max-w-xs" data-testid="fp-channel-toggle">
+                {[
+                  { id: "email", label: "Email", Icon: Mail },
+                  { id: "sms", label: "SMS", Icon: MessageSquare },
+                ].map((c) => (
+                  <button key={c.id} type="button" onClick={() => setChannel(c.id)}
+                    className={`flex-1 text-sm py-1.5 rounded-full transition flex items-center justify-center gap-2 ${channel === c.id ? "bg-gradient-to-r from-orange-500 to-red-500 text-white" : "text-slate-300 hover:text-white"}`}
+                    data-testid={`fp-channel-${c.id}`}
+                  >
+                    <c.Icon size={14} /> {c.label}
+                  </button>
+                ))}
               </div>
-              <button type="submit" disabled={loading} className="btn-primary w-full" data-testid="fp-send-otp-btn">{loading ? "Sending..." : "Send OTP"}</button>
-            </form>
+
+              <form onSubmit={requestOtp} className="space-y-5" data-testid="fp-step-1">
+                <h1 className="font-display text-3xl font-black">Reset your password</h1>
+                <p className="text-slate-400 text-sm">
+                  {channel === "sms"
+                    ? "Enter your registered phone number — we'll text you a 6-digit code."
+                    : "Enter your registered email — we'll email you a 6-digit code."}
+                </p>
+                {channel === "sms" ? (
+                  <div>
+                    <label className="text-xs font-mono uppercase tracking-widest text-slate-400 mb-2 block">Phone (E.164)</label>
+                    <input type="tel" className="input-field" placeholder="+14155552671" value={phone} onChange={(e) => setPhone(e.target.value)} required data-testid="fp-phone-input" />
+                    <div className="text-[11px] text-slate-500 mt-1">Include the country code with a leading +</div>
+                  </div>
+                ) : (
+                  <div>
+                    <label className="text-xs font-mono uppercase tracking-widest text-slate-400 mb-2 block">Email</label>
+                    <input type="email" className="input-field" placeholder="you@bandish.club" value={email} onChange={(e) => setEmail(e.target.value)} required data-testid="fp-email-input" />
+                  </div>
+                )}
+                <button type="submit" disabled={loading} className="btn-primary w-full" data-testid="fp-send-otp-btn">{loading ? "Sending..." : (channel === "sms" ? "Send SMS Code" : "Send Email Code")}</button>
+              </form>
+            </>
           )}
 
           {step === 2 && (
             <form onSubmit={verifyOtp} className="space-y-5" data-testid="fp-step-2">
-              <h1 className="font-display text-3xl font-black">Enter OTP</h1>
-              <p className="text-slate-400 text-sm">We sent a 6-digit code to <span className="text-orange-400 font-semibold">{email}</span>. It expires in 10 minutes.</p>
+              <h1 className="font-display text-3xl font-black">Enter code</h1>
+              <p className="text-slate-400 text-sm">
+                We sent a 6-digit code to <span className="text-orange-400 font-semibold">{readableIdentifier}</span>. It expires in 10 minutes.
+              </p>
               <div className="flex justify-center py-2">
                 <InputOTP maxLength={6} value={otp} onChange={setOtp} data-testid="fp-otp-input">
                   <InputOTPGroup>
@@ -116,8 +147,8 @@ export default function ForgotPassword() {
                   </InputOTPGroup>
                 </InputOTP>
               </div>
-              <button type="submit" disabled={loading} className="btn-primary w-full" data-testid="fp-verify-otp-btn">{loading ? "Verifying..." : "Verify OTP"}</button>
-              <button type="button" onClick={() => setStep(1)} className="text-sm text-slate-400 hover:text-orange-400 w-full text-center" data-testid="fp-back-to-email">Resend OTP / Change Email</button>
+              <button type="submit" disabled={loading} className="btn-primary w-full" data-testid="fp-verify-otp-btn">{loading ? "Verifying..." : "Verify Code"}</button>
+              <button type="button" onClick={() => setStep(1)} className="text-sm text-slate-400 hover:text-orange-400 w-full text-center" data-testid="fp-back-to-email">Resend / Change Identifier</button>
             </form>
           )}
 
